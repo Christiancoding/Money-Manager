@@ -153,18 +153,17 @@ def init_database():
             raise
         finally:
             conn.close()
+    # Then initialize other tables
     create_custom_categories_table()
     create_account_balance_table()
-    create_accounts_table() 
-    migrate_existing_data()
     create_ious_table()
-    create_custom_categories_table()
-    create_account_balance_table()
+    create_iou_payments_table()
     create_transactions_table()
     create_categories_table()
-    create_iou_payments_table()
-    migrate_ious_table() 
+    migrate_ious_table()
+    migrate_existing_data()
     
+    # Insert default categories (existing code)
     for name, cat_type, color in default_categories:
         conn.execute(
             'INSERT OR IGNORE INTO categories (name, type, color) VALUES (?, ?, ?)',
@@ -1598,10 +1597,56 @@ def migrate_existing_data():
         if not tables:
             logger.info("Creating accounts table for existing installation")
             create_accounts_table()
+        else:
+            # Check if accounts table has the new schema
+            columns = conn.execute("PRAGMA table_info(accounts)").fetchall()
+            column_names = [col[1] for col in columns]
+            
+            # If missing the 'type' column, we need to migrate the table
+            if 'type' not in column_names:
+                logger.info("Migrating accounts table to new schema")
+                
+                # Backup existing data
+                existing_accounts = conn.execute('SELECT * FROM accounts').fetchall()
+                
+                # Drop and recreate table with new schema
+                conn.execute('DROP TABLE accounts')
+                
+                # Create new accounts table
+                conn.execute('''
+                    CREATE TABLE accounts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL UNIQUE,
+                        type TEXT NOT NULL CHECK(type IN ('checking', 'savings', 'credit_card', 'investment', 'cash', 'other')),
+                        description TEXT,
+                        initial_balance DECIMAL(10, 2) DEFAULT 0.00,
+                        current_balance DECIMAL(10, 2) DEFAULT 0.00,
+                        is_active BOOLEAN DEFAULT 1,
+                        created_date DATE DEFAULT CURRENT_DATE,
+                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                
+                # Restore data with default values for new columns
+                for account in existing_accounts:
+                    conn.execute('''
+                        INSERT INTO accounts (id, name, type, description, initial_balance, current_balance, is_active) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        account['id'], 
+                        account['name'], 
+                        'checking',  # Default type
+                        f"Migrated from old schema", 
+                        account.get('balance', 0.00),  # Use old balance as initial
+                        account.get('balance', 0.00),  # Use old balance as current
+                        1  # Active
+                    ))
+                
+                logger.info("Accounts table migration completed")
             
         # Check if transactions have account_id column
-        columns = conn.execute("PRAGMA table_info(transactions)").fetchall()
-        has_account_id = any(col[1] == 'account_id' for col in columns)
+        trans_columns = conn.execute("PRAGMA table_info(transactions)").fetchall()
+        has_account_id = any(col[1] == 'account_id' for col in trans_columns)
         
         if not has_account_id:
             logger.info("Adding account_id column to transactions")
@@ -1614,17 +1659,18 @@ def migrate_existing_data():
                 conn.execute('''
                     INSERT INTO accounts (name, type, description, current_balance, initial_balance) 
                     VALUES (?, ?, ?, ?, ?)
-                ''', ('Main Account', 'checking', 'Migrated default account', current_balance, 0.00))
+                ''', ('Main Account', 'checking', 'Default account', current_balance, 0.00))
                 
-                # Update all existing transactions to use the default account
-                conn.execute('UPDATE transactions SET account_id = 1 WHERE account_id IS NULL')
-                
+            # Update existing transactions to use default account (ID = 1)
+            conn.execute('UPDATE transactions SET account_id = 1 WHERE account_id IS NULL')
+        
         conn.commit()
-        logger.info("Migration completed successfully")
+        logger.info("Data migration completed successfully")
         
     except sqlite3.Error as e:
-        logger.error(f"Migration failed: {e}")
+        logger.error(f"Failed to migrate data: {e}")
         conn.rollback()
+        raise
     finally:
         conn.close()
 def update_account(account_id: int, name: str, account_type: str, description: Optional[str] = None) -> bool:
