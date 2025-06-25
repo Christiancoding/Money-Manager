@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+
+{% block title %}Accounts - Money Manager{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <h2>Account Management</h2>
+    </div>
+    <div class="col-md-4 text-end">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
+            <i class="fas fa-plus me-2"></i>Add Account
+        </button>
+    </div>
+</div>
+
+<!-- Accounts Overview Cards -->
+<div class="row mb-4">
+    {% for account in accounts %}
+    <div class="col-md-6 col-lg-4 mb-3">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">{{ account.name }}</h6>
+                <span class="badge bg-primary">{{ account.type.replace('_', ' ').title() }}</span>
+            </div>
+            <div class="card-body">
+                {% if account.description %}
+                <p class="card-text text-muted small">{{ account.description }}</p>
+                {% endif %}
+                
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h6 class="text-muted">Current Balance</h6>
+                        <h5 class="text-{{ 'success' if account.current_balance >= 0 else 'danger' }}">
+                            ${{ "%.2f"|format(account.current_balance) }}
+                        </h5>
+                    </div>
+                    <div class="col-6">
+                        <h6 class="text-muted">Calculated</h6>
+                        <h5 class="text-{{ 'success' if account.calculated_balance >= 0 else 'danger' }}">
+                            ${{ "%.2f"|format(account.calculated_balance) }}
+                        </h5>
+                    </div>
+                </div>
+                
+                {% if (account.current_balance - account.calculated_balance)|abs > 0.01 %}
+                <div class="alert alert-warning alert-sm mt-2">
+                    <small><i class="fas fa-exclamation-triangle"></i> Balance mismatch detected</small>
+                </div>
+                {% endif %}
+            </div>
+                <div class="card-footer">
+                    <div class="d-flex justify-content-between">
+                        <small class="text-muted">Created: {{ account.created_date }}</small>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary reconcile-btn" 
+                                    data-account-id="{{ account.id }}"
+                                    data-account-name="{{ account.name }}"
+                                    title="Reconcile Balance">
+                                <i class="fas fa-sync"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary edit-btn" 
+                                    data-account-id="{{ account.id }}"
+                                    title="Edit Account">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger delete-btn" 
+                                    data-account-id="{{ account.id }}"
+                                    data-account-name="{{ account.name }}"
+                                    title="Delete Account">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Total Summary -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Portfolio Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Total Accounts</h6>
+                        <h4>{{ accounts|length }}</h4>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Total Current Balance</h6>
+                        <h4 class="text-{{ 'success' if (accounts|sum(attribute='current_balance')) >= 0 else 'danger' }}">
+                            ${{ "%.2f"|format(accounts|sum(attribute='current_balance')) }}
+                        </h4>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Total Calculated Balance</h6>
+                        <h4 class="text-{{ 'success' if (accounts|sum(attribute='calculated_balance')) >= 0 else 'danger' }}">
+                            ${{ "%.2f"|format(accounts|sum(attribute='calculated_balance')) }}
+                        </h4>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Net Worth</h6>
+                        <h4 class="text-{{ 'success' if (accounts|sum(attribute='calculated_balance')) >= 0 else 'danger' }}">
+                            ${{ "%.2f"|format(accounts|sum(attribute='calculated_balance')) }}
+                        </h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Account Modal -->
+<div class="modal fade" id="addAccountModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_account') }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Account</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Account Name *</label>
+                        <input type="text" class="form-control" name="name" id="name" required maxlength="50">
+                    </div>
+                    <div class="mb-3">
+                        <label for="type" class="form-label">Account Type *</label>
+                        <select class="form-select" name="type" id="type" required>
+                            <option value="">Select type...</option>
+                            {% for type in account_types %}
+                            <option value="{{ type }}">{{ type.replace('_', ' ').title() }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <input type="text" class="form-control" name="description" id="description">
+                    </div>
+                    <div class="mb-3">
+                        <label for="initial_balance" class="form-label">Initial Balance</label>
+                        <input type="number" class="form-control" name="initial_balance" id="initial_balance" step="0.01" value="0.00">
+                        <div class="form-text">This will be the starting balance for this account.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Account</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<!-- Edit Account Modal -->
+<div class="modal fade" id="editAccountModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="editAccountForm">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Account</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="edit_name" class="form-label">Account Name *</label>
+                        <input type="text" class="form-control" name="name" id="edit_name" required maxlength="50">
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit_type" class="form-label">Account Type *</label>
+                        <select class="form-select" name="type" id="edit_type" required>
+                            <option value="">Select type...</option>
+                            {% for type in account_types %}
+                            <option value="{{ type }}">{{ type.replace('_', ' ').title() }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit_description" class="form-label">Description</label>
+                        <input type="text" class="form-control" name="description" id="edit_description">
+                    </div>
+                    <div class="alert alert-info">
+                        <small><i class="fas fa-info-circle"></i> Account balance will not be changed by editing details.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Handle all button clicks using event delegation
+document.addEventListener('click', function(e) {
+    // Handle reconcile button clicks
+    if (e.target.closest('.reconcile-btn')) {
+        const button = e.target.closest('.reconcile-btn');
+        const accountId = button.getAttribute('data-account-id');
+        const accountName = button.getAttribute('data-account-name');
+        
+        if (confirm(`Reconcile balance for "${accountName}"? This will update the current balance to match the calculated balance from transactions.`)) {
+            // Make AJAX request to reconcile
+            fetch(`/reconcile_account/${accountId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Error reconciling account: ' + data.error);
+                }
+            })
+            .catch(error => {
+                alert('Error reconciling account: ' + error);
+            });
+        }
+        return;
+    }
+    
+    // Handle edit button clicks
+    if (e.target.closest('.edit-btn')) {
+        const button = e.target.closest('.edit-btn');
+        const accountId = button.getAttribute('data-account-id');
+        
+        // Fetch account data and populate modal
+        fetch(`/edit_account/${accountId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert('Error loading account: ' + data.error);
+                return;
+            }
+            
+            // Populate form fields
+            document.getElementById('edit_name').value = data.name || '';
+            document.getElementById('edit_type').value = data.type || '';
+            document.getElementById('edit_description').value = data.description || '';
+            
+            // Set form action
+            document.getElementById('editAccountForm').action = `/edit_account/${accountId}`;
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('editAccountModal'));
+            modal.show();
+        })
+        .catch(error => {
+            alert('Error loading account: ' + error);
+        });
+        return;
+    }
+    
+    // Handle delete button clicks
+    if (e.target.closest('.delete-btn')) {
+        const button = e.target.closest('.delete-btn');
+        const accountId = button.getAttribute('data-account-id');
+        const accountName = button.getAttribute('data-account-name');
+        
+        // First confirmation
+        if (!confirm(`Are you sure you want to delete "${accountName}"?`)) {
+            return;
+        }
+        
+        // Check for transactions first
+        fetch(`/edit_account/${accountId}`)
+        .then(response => response.json())
+        .then(data => {
+            // Create and submit delete form
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/delete_account/${accountId}`;
+            form.style.display = 'none';
+            
+            // Handle CSRF token if available (graceful fallback)
+            try {
+                const csrfToken = '{{ csrf_token() if csrf_token else "" }}';
+                if (csrfToken) {
+                    const csrfInput = document.createElement('input');
+                    csrfInput.type = 'hidden';
+                    csrfInput.name = 'csrf_token';
+                    csrfInput.value = csrfToken;
+                    form.appendChild(csrfInput);
+                }
+            } catch (e) {
+                // CSRF not configured - continue without token
+                console.debug('CSRF protection not configured');
+            }
+            
+            document.body.appendChild(form);
+            form.submit();
+        })
+        .catch(error => {
+            console.error('Error checking account:', error);
+            // Proceed with deletion anyway
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/delete_account/${accountId}`;
+            form.style.display = 'none';
+            document.body.appendChild(form);
+            form.submit();
+        });
+        return;
+    }
+});
+</script>
+{% endblock %}

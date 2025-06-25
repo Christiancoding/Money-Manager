@@ -1,0 +1,541 @@
+{% extends "base.html" %}
+
+{% block title %}Transactions - Money Manager{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <h2><i class="fas fa-list me-2"></i>Transactions</h2>
+        {% if selected_account %}
+        <div class="alert alert-info alert-dismissible fade show">
+            <i class="fas fa-filter me-2"></i>
+            Showing transactions for: <strong>{{ selected_account.name }}</strong>
+            <a href="{{ url_for('transactions') }}" class="btn btn-sm btn-outline-info ms-2">
+                <i class="fas fa-times"></i> Clear Filter
+            </a>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endif %}
+    </div>
+    <div class="col-md-4 text-end">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTransactionModal">
+            <i class="fas fa-plus me-2"></i>Add Transaction
+        </button>
+        <div class="dropdown d-inline-block ms-2">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="fas fa-download me-2"></i>Export
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="{{ url_for('export_transactions_csv') }}">
+                    <i class="fas fa-file-csv me-2"></i>Export as CSV
+                </a></li>
+                <li><a class="dropdown-item" href="{{ url_for('export_pdf_report') }}">
+                    <i class="fas fa-file-pdf me-2"></i>Export as PDF
+                </a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Filters Row -->
+<div class="row mb-3">
+<div class="col-md-4">
+    <div class="card">
+        <div class="card-body py-2">
+            <div class="row align-items-center">
+                <div class="col-6">
+                    <span class="form-text mb-0 small fw-bold">Time Period:</span>
+                </div>
+                <div class="col-6">
+                    <div class="btn-group btn-group-sm w-100" role="group" aria-label="Time period selection">
+                        <a href="{{ url_for('transactions', account_id=request.args.get('account_id'), category=request.args.get('category')) }}" 
+                           class="btn btn-outline-secondary {{ 'active' if not request.args.get('days') else '' }}">All</a>
+                        <a href="{{ url_for('transactions', days=1, account_id=request.args.get('account_id'), category=request.args.get('category')) }}" 
+                           class="btn btn-outline-secondary {{ 'active' if request.args.get('days') == '1' else '' }}">Today</a>
+                        <a href="{{ url_for('transactions', days=7, account_id=request.args.get('account_id'), category=request.args.get('category')) }}" 
+                           class="btn btn-outline-secondary {{ 'active' if request.args.get('days') == '7' else '' }}">Week</a>
+                        <a href="{{ url_for('transactions', days=30, account_id=request.args.get('account_id'), category=request.args.get('category')) }}" 
+                           class="btn btn-outline-secondary {{ 'active' if request.args.get('days') == '30' else '' }}">Month</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body py-2">
+                <form method="GET" action="{{ url_for('transactions') }}" class="row align-items-center">
+                    {% if request.args.get('days') %}
+                    <input type="hidden" name="days" value="{{ request.args.get('days') }}">
+                    {% endif %}
+                    {% if request.args.get('category') %}
+                    <input type="hidden" name="category" value="{{ request.args.get('category') }}">
+                    {% endif %}
+                    <div class="col-4">
+                        <label for="account-filter" class="form-label mb-0 small">Account:</label>
+                    </div>
+                    <div class="col-8">
+                        <div class="input-group input-group-sm">
+                            <select class="form-select" name="account_id" id="account-filter" onchange="this.form.submit()">
+                                <option value="">All Accounts</option>
+                                {% for account in accounts %}
+                                <option value="{{ account.id }}" {{ 'selected' if selected_account and selected_account.id == account.id else '' }}>
+                                    {{ account.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            {% if selected_account %}
+                            <a href="{{ url_for('transactions', days=request.args.get('days'), category=request.args.get('category')) }}" class="btn btn-outline-secondary btn-sm">
+                                <i class="fas fa-times"></i>
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body py-2">
+                <form method="GET" action="{{ url_for('transactions') }}" class="row align-items-center">
+                    {% if request.args.get('days') %}
+                    <input type="hidden" name="days" value="{{ request.args.get('days') }}">
+                    {% endif %}
+                    {% if request.args.get('account_id') %}
+                    <input type="hidden" name="account_id" value="{{ request.args.get('account_id') }}">
+                    {% endif %}
+                    <div class="col-4">
+                        <label for="category-filter" class="form-label mb-0 small">Category:</label>
+                    </div>
+                    <div class="col-8">
+                        <div class="input-group input-group-sm">
+                            <select class="form-select" name="category" id="category-filter" onchange="this.form.submit()">
+                                <option value="">All Categories</option>
+                                {% for category in unique_categories %}
+                                <option value="{{ category }}" {{ 'selected' if selected_category == category else '' }}>
+                                    {{ category }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            {% if selected_category %}
+                            <a href="{{ url_for('transactions', days=request.args.get('days'), account_id=request.args.get('account_id')) }}" class="btn btn-outline-secondary btn-sm">
+                                <i class="fas fa-times"></i>
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Transaction Statistics -->
+{% if transactions %}
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body py-2">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <small class="text-muted">Total Transactions</small>
+                        <div class="fw-bold">{{ transactions|length }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-success">Total Income</small>
+                        <div class="fw-bold text-success">
+                            ${{ "%.2f"|format(transactions|selectattr('type', 'equalto', 'income')|sum(attribute='amount')) }}
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-danger">Total Expenses</small>
+                        <div class="fw-bold text-danger">
+                            ${{ "%.2f"|format(transactions|selectattr('type', 'equalto', 'expense')|sum(attribute='amount')) }}
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-primary">Net Amount</small>
+                        <div class="fw-bold text-primary">
+                            ${{ "%.2f"|format(transactions|selectattr('type', 'equalto', 'income')|sum(attribute='amount') - transactions|selectattr('type', 'equalto', 'expense')|sum(attribute='amount')) }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Transactions Table -->
+<div class="card">
+    <div class="card-body">
+        {% if transactions %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>Account</th>
+                            <th>Category</th>
+                            <th>Description</th>
+                            <th class="text-end">Amount</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for transaction in transactions %}
+                        <tr class="transaction-row">
+                            <td>
+                                <div class="fw-bold">{{ transaction.date }}</div>
+                                <small class="text-muted">{{ transaction.created_at.split(' ')[0] if transaction.created_at else '' }}</small>
+                            </td>
+                            <td>
+                                <span class="badge bg-{{ 'success' if transaction.type == 'income' else 'danger' }}">
+                                    <i class="fas fa-{{ 'arrow-up' if transaction.type == 'income' else 'arrow-down' }} me-1"></i>
+                                    {{ transaction.type.title() }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="fw-bold">{{ transaction.account_name or 'Unknown' }}</div>
+                                <small class="text-muted">ID: {{ transaction.account_id or '-' }}</small>
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">{{ transaction.category }}</span>
+                            </td>
+                            <td>
+                                <div>{{ transaction.description or '-' }}</div>
+                                {% if transaction.category in ['Transfer In', 'Transfer Out'] %}
+                                <small class="text-info">
+                                    <i class="fas fa-exchange-alt me-1"></i>Transfer
+                                </small>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <div class="fw-bold text-{{ 'success' if transaction.type == 'income' else 'danger' }} fs-5">
+                                    {{ '+' if transaction.type == 'income' else '-' }}${{ "%.2f"|format(transaction.amount) }}
+                                </div>
+                            </td>
+                            <td class="text-center">
+                                <button class="btn btn-sm btn-outline-danger delete-btn" 
+                                        data-transaction-id="{{ transaction.id }}"
+                                        data-transaction-description="{{ transaction.description or transaction.category }}"
+                                        data-transaction-type="{{ transaction.type }}"
+                                        data-transaction-amount="{{ transaction.amount }}"
+                                        data-transaction-account="{{ transaction.account_name or 'Unknown' }}"
+                                        title="Delete Transaction">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination placeholder -->
+            {% if transactions|length >= 50 %}
+            <div class="text-center mt-3">
+                <p class="text-muted">Showing first 50 transactions. Use filters to narrow results.</p>
+            </div>
+            {% endif %}
+        {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-receipt fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No transactions found</h5>
+                {% if selected_account %}
+                <p class="text-muted">No transactions found for <strong>{{ selected_account.name }}</strong>.</p>
+                {% else %}
+                <p class="text-muted">Start by adding your first transaction!</p>
+                {% endif %}
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTransactionModal">
+                    <i class="fas fa-plus me-2"></i>Add Transaction
+                </button>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Add Transaction Modal -->
+<div class="modal fade" id="addTransactionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_transaction') }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-plus me-2"></i>Add New Transaction
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="type" class="form-label">Transaction Type *</label>
+                                <select class="form-select" name="type" id="type" required onchange="updateCategories()">
+                                    <option value="">Select type...</option>
+                                    <option value="income">
+                                        <i class="fas fa-arrow-up"></i> Income
+                                    </option>
+                                    <option value="expense">
+                                        <i class="fas fa-arrow-down"></i> Expense
+                                    </option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="account" class="form-label">Account *</label>
+                                <select class="form-select" name="account_id" id="account" required>
+                                    <option value="">Select account...</option>
+                                    {% for account in accounts %}
+                                    <option value="{{ account.id }}" 
+                                            {{ 'selected' if selected_account and selected_account.id == account.id else '' }}
+                                            data-balance="{{ account.current_balance }}">
+                                        {{ account.name }} - ${{ "%.2f"|format(account.current_balance) }}
+                                        <small>({{ account.type.replace('_', ' ').title() }})</small>
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="category" class="form-label">Category *</label>
+                                <select class="form-select" name="category" id="category" required>
+                                    <option value="">Select category...</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="amount" class="form-label">Amount *</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" class="form-control" name="amount" id="amount" 
+                                           step="0.01" min="0" required placeholder="0.00">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <input type="text" class="form-control" name="description" id="description" 
+                               placeholder="Optional description or notes">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="date" class="form-label">Date *</label>
+                        <input type="date" class="form-control" name="date" id="date" 
+                               value="{{ moment.now().strftime('%Y-%m-%d') }}" required>
+                    </div>
+
+                    <!-- Transaction Preview -->
+                    <div id="transaction-preview" class="card bg-light" style="display: none;">
+                        <div class="card-body">
+                            <h6 class="card-title">Transaction Preview</h6>
+                            <div class="row">
+                                <div class="col-6">
+                                    <strong>Account:</strong> <span id="preview-account">-</span><br>
+                                    <strong>Type:</strong> <span id="preview-type">-</span><br>
+                                    <strong>Category:</strong> <span id="preview-category">-</span>
+                                </div>
+                                <div class="col-6">
+                                    <strong>Amount:</strong> <span id="preview-amount">$0.00</span><br>
+                                    <strong>Date:</strong> <span id="preview-date">-</span><br>
+                                    <strong>Description:</strong> <span id="preview-description">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-2"></i>Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-plus me-2"></i>Add Transaction
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteTransactionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Confirm Delete
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="fas fa-warning me-2"></i>
+                    <strong>Warning:</strong> This action cannot be undone!
+                </div>
+                
+                <p class="mb-3">Are you sure you want to delete this transaction?</p>
+                
+                <div class="card">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-sm-4"><strong>Account:</strong></div>
+                            <div class="col-sm-8" id="deleteTransactionAccount">-</div>
+                        </div>
+                        <div class="row">
+                            <div class="col-sm-4"><strong>Description:</strong></div>
+                            <div class="col-sm-8" id="deleteTransactionDescription">-</div>
+                        </div>
+                        <div class="row">
+                            <div class="col-sm-4"><strong>Type:</strong></div>
+                            <div class="col-sm-8">
+                                <span id="deleteTransactionType" class="badge">-</span>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-sm-4"><strong>Amount:</strong></div>
+                            <div class="col-sm-8">
+                                <span id="deleteTransactionAmount" class="fw-bold">$0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteTransactionForm" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash me-2"></i>Delete Transaction
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function updateCategories() {
+    const typeSelect = document.getElementById('type');
+    const categorySelect = document.getElementById('category');
+    
+    // Clear existing options
+    categorySelect.innerHTML = '<option value="">Select category...</option>';
+    
+    if (typeSelect.value) {
+        try {
+            const response = await fetch(`/api/categories/${typeSelect.value}`);
+            const categories = await response.json();
+            
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category.name;
+                option.textContent = category.name;
+                if (category.custom) {
+                    option.textContent += ' (Custom)';
+                }
+                categorySelect.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Error fetching categories:', error);
+        }
+    }
+    
+    updateTransactionPreview();
+}
+
+function updateTransactionPreview() {
+    const type = document.getElementById('type').value;
+    const account = document.getElementById('account').selectedOptions[0];
+    const category = document.getElementById('category').value;
+    const amount = document.getElementById('amount').value;
+    const date = document.getElementById('date').value;
+    const description = document.getElementById('description').value;
+    
+    const preview = document.getElementById('transaction-preview');
+    
+    if (type && account && category && amount && date) {
+        document.getElementById('preview-account').textContent = account.textContent.split(' - ')[0];
+        document.getElementById('preview-type').innerHTML = `<span class="badge bg-${type === 'income' ? 'success' : 'danger'}">${type.charAt(0).toUpperCase() + type.slice(1)}</span>`;
+        document.getElementById('preview-category').textContent = category;
+        document.getElementById('preview-amount').innerHTML = `<span class="text-${type === 'income' ? 'success' : 'danger'}">${type === 'income' ? '+' : '-'}$${parseFloat(amount).toFixed(2)}</span>`;
+        document.getElementById('preview-date').textContent = date;
+        document.getElementById('preview-description').textContent = description || 'No description';
+        
+        preview.style.display = 'block';
+    } else {
+        preview.style.display = 'none';
+    }
+}
+
+function confirmDelete(transactionId, description, type, amount, account) {
+    // Update modal content with transaction details
+    document.getElementById('deleteTransactionAccount').textContent = account || 'Unknown';
+    document.getElementById('deleteTransactionDescription').textContent = description || 'No description';
+    
+    const typeElement = document.getElementById('deleteTransactionType');
+    typeElement.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+    typeElement.className = `badge bg-${type === 'income' ? 'success' : 'danger'}`;
+    
+    const amountElement = document.getElementById('deleteTransactionAmount');
+    const sign = type === 'income' ? '+' : '-';
+    amountElement.textContent = `${sign}$${parseFloat(amount).toFixed(2)}`;
+    amountElement.className = `fw-bold text-${type === 'income' ? 'success' : 'danger'}`;
+    
+    // Set up the delete form action
+    const deleteForm = document.getElementById('deleteTransactionForm');
+    deleteForm.action = `/delete_transaction/${transactionId}`;
+    
+    // Show the modal
+    const modal = new bootstrap.Modal(document.getElementById('deleteTransactionModal'));
+    modal.show();
+}
+
+// Handle delete button clicks using event delegation
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.delete-btn')) {
+        e.preventDefault();
+        const button = e.target.closest('.delete-btn');
+        
+        const transactionId = button.getAttribute('data-transaction-id');
+        const description = button.getAttribute('data-transaction-description');
+        const type = button.getAttribute('data-transaction-type');
+        const amount = button.getAttribute('data-transaction-amount');
+        const account = button.getAttribute('data-transaction-account');
+        
+        confirmDelete(transactionId, description, type, amount, account);
+    }
+});
+
+// Set up event listeners for preview updates
+document.addEventListener('DOMContentLoaded', function() {
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('date').value = today;
+    
+    // Add event listeners for preview
+    ['type', 'account', 'category', 'amount', 'date', 'description'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('change', updateTransactionPreview);
+            element.addEventListener('input', updateTransactionPreview);
+        }
+    });
+});
+
+// Auto-focus on amount field when modal opens
+document.getElementById('addTransactionModal').addEventListener('shown.bs.modal', function () {
+    document.getElementById('type').focus();
+});
+</script>
+{% endblock %}

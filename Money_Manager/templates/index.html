@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Money Manager{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">Today's Income</h6>
+                        <h4>${{ "%.2f"|format(today.income) }}</h4>
+                    </div>
+                    <i class="fas fa-arrow-up fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-danger text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">Today's Expenses</h6>
+                        <h4>${{ "%.2f"|format(today.expense) }}</h4>
+                    </div>
+                    <i class="fas fa-arrow-down fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">Today's Net</h6>
+                        <h4>${{ "%.2f"|format(today.net) }}</h4>
+                    </div>
+                    <i class="fas fa-balance-scale fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Weekly Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <h6 class="text-success">Income</h6>
+                        <h5>${{ "%.2f"|format(week.income) }}</h5>
+                    </div>
+                    <div class="col-4">
+                        <h6 class="text-danger">Expenses</h6>
+                        <h5>${{ "%.2f"|format(week.expense) }}</h5>
+                    </div>
+                    <div class="col-4">
+                        <h6 class="text-primary">Net</h6>
+                        <h5>${{ "%.2f"|format(week.net) }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Monthly Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <h6 class="text-success">Income</h6>
+                        <h5>${{ "%.2f"|format(month.income) }}</h5>
+                    </div>
+                    <div class="col-4">
+                        <h6 class="text-danger">Expenses</h6>
+                        <h5>${{ "%.2f"|format(month.expense) }}</h5>
+                    </div>
+                    <div class="col-4">
+                        <h6 class="text-primary">Net</h6>
+                        <h5>${{ "%.2f"|format(month.net) }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Account Overview Section -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-university me-2"></i>Account Overview</h5>
+                <div>
+                    <span class="badge bg-primary fs-6">Total: ${{ "%.2f"|format(total_balance or 0) }}</span>
+                    <a href="{{ url_for('accounts') }}" class="btn btn-sm btn-outline-primary ms-2">
+                        <i class="fas fa-cog me-1"></i>Manage
+                    </a>
+                    <a href="{{ url_for('transfer') }}" class="btn btn-sm btn-outline-success ms-1">
+                        <i class="fas fa-exchange-alt me-1"></i>Transfer
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if accounts_summary %}
+                <div class="row">
+                    {% for account in accounts_summary[:4] %}
+                    <div class="col-md-3 col-sm-6 mb-3">
+                        <div class="border rounded p-3 h-100">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <h6 class="mb-1">{{ account.name }}</h6>
+                                    <small class="text-muted">{{ account.type.replace('_', ' ').title() }}</small>
+                                </div>
+                                <span class="badge bg-{{ 'success' if account.current_balance >= 0 else 'danger' }} badge-sm">
+                                    {{ 'positive' if account.current_balance >= 0 else 'negative' }}
+                                </span>
+                            </div>
+                            <div>
+                                <strong class="text-{{ 'success' if account.current_balance >= 0 else 'danger' }} fs-5">
+                                    ${{ "%.2f"|format(account.current_balance) }}
+                                </strong>
+                                {% if (account.current_balance - account.calculated_balance)|abs > 0.01 %}
+                                <br><small class="text-warning">
+                                    <i class="fas fa-exclamation-triangle"></i> Needs reconciliation
+                                </small>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if accounts_summary|length > 4 %}
+                <div class="text-center mt-2">
+                    <small class="text-muted">
+                        <i class="fas fa-ellipsis-h"></i> 
+                        {{ accounts_summary|length - 4 }} more account{{ 's' if accounts_summary|length - 4 != 1 else '' }}
+                    </small>
+                </div>
+                {% endif %}
+                <!-- IOU Summary Section -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5><i class="fas fa-handshake me-2"></i>Pending IOUs</h5>
+                                <a href="{{ url_for('ious') }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-list me-1"></i>Manage
+                                </a>
+                            </div>
+                            <div class="card-body">
+                                {% if pending_ious_summary %}
+                                <div class="row text-center">
+                                    <div class="col-md-6">
+                                        <h6 class="text-success">Owed to Me</h6>
+                                        <h5 class="text-success">${{ "%.2f"|format(pending_ious_summary.owed_to_me) }}</h5>
+                                        <small class="text-muted">{{ pending_ious_summary.count_owed_to_me }} pending</small>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6 class="text-danger">I Owe</h6>
+                                        <h5 class="text-danger">${{ "%.2f"|format(pending_ious_summary.i_owe) }}</h5>
+                                        <small class="text-muted">{{ pending_ious_summary.count_i_owe }} pending</small>
+                                    </div>
+                                </div>
+                                {% else %}
+                                <div class="text-center py-2">
+                                    <small class="text-muted">No pending IOUs</small>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Quick Actions -->
+                <div class="row mt-3 pt-3 border-top">
+                    <div class="col-12">
+                        <h6 class="text-muted mb-2">Quick Actions</h6>
+                        <div class="btn-group" role="group">
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#quickAddTransactionModal">
+                                <i class="fas fa-plus me-1"></i>Add Transaction
+                            </button>
+                            <a href="{{ url_for('transfer') }}" class="btn btn-sm btn-outline-success">
+                                <i class="fas fa-exchange-alt me-1"></i>Transfer
+                            </a>
+                            <a href="{{ url_for('charts') }}" class="btn btn-sm btn-outline-info">
+                                <i class="fas fa-chart-bar me-1"></i>Analytics
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="fas fa-university fa-3x text-muted mb-3"></i>
+                    <h5 class="text-muted">No accounts found</h5>
+                    <p class="text-muted">Get started by creating your first account</p>
+                    <a href="{{ url_for('accounts') }}" class="btn btn-primary">
+                        <i class="fas fa-plus me-2"></i>Create Account
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Transactions -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-clock me-2"></i>Recent Transactions</h5>
+                <a href="{{ url_for('transactions') }}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-list me-1"></i>View All
+                </a>
+            </div>
+            <div class="card-body">
+                {% if recent_transactions %}
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Account</th>
+                                    <th>Category</th>
+                                    <th class="text-end">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for transaction in recent_transactions[:8] %}
+                                <tr>
+                                    <td>
+                                        <small>{{ transaction.date }}</small>
+                                    </td>
+                                    <td>
+                                        <div>{{ transaction.description or '-' }}</div>
+                                        <span class="badge bg-{{ 'success' if transaction.type == 'income' else 'danger' }} badge-sm">
+                                            <i class="fas fa-{{ 'arrow-up' if transaction.type == 'income' else 'arrow-down' }} me-1"></i>
+                                            {{ transaction.type.title() }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ transaction.account_name or 'Unknown' }}</small>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-secondary">{{ transaction.category }}</span>
+                                    </td>
+                                    <td class="text-end">
+                                        <strong class="text-{{ 'success' if transaction.type == 'income' else 'danger' }}">
+                                            {{ '+' if transaction.type == 'income' else '-' }}${{ "%.2f"|format(transaction.amount) }}
+                                        </strong>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if recent_transactions|length > 8 %}
+                    <div class="text-center mt-3">
+                        <a href="{{ url_for('transactions') }}" class="btn btn-outline-primary btn-sm">
+                            View {{ recent_transactions|length - 8 }} more transaction{{ 's' if recent_transactions|length - 8 != 1 else '' }}
+                        </a>
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-receipt fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No recent transactions</h5>
+                        <p class="text-muted">Start by adding your first transaction!</p>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#quickAddTransactionModal">
+                            <i class="fas fa-plus me-2"></i>Add Transaction
+                        </button>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Add Transaction Modal -->
+<div class="modal fade" id="quickAddTransactionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_transaction') }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-plus me-2"></i>Quick Add Transaction
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="quick_type" class="form-label">Type</label>
+                        <select class="form-select" name="type" id="quick_type" required onchange="updateQuickCategories()">
+                            <option value="">Select type...</option>
+                            <option value="income">Income</option>
+                            <option value="expense">Expense</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="quick_account" class="form-label">Account</label>
+                        <select class="form-select" name="account_id" id="quick_account" required>
+                            <option value="">Select account...</option>
+                            {% for account in accounts_summary %}
+                            <option value="{{ account.id }}">
+                                {{ account.name }} - ${{ "%.2f"|format(account.current_balance) }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="quick_category" class="form-label">Category</label>
+                        <select class="form-select" name="category" id="quick_category" required>
+                            <option value="">Select category...</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="quick_amount" class="form-label">Amount</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" name="amount" id="quick_amount" step="0.01" min="0" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="quick_description" class="form-label">Description (Optional)</label>
+                        <input type="text" class="form-control" name="description" id="quick_description">
+                    </div>
+                    <div class="mb-3">
+                        <label for="quick_date" class="form-label">Date</label>
+                        <input type="date" class="form-control" name="date" id="quick_date" value="{{ moment.now().strftime('%Y-%m-%d') }}">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-plus me-2"></i>Add Transaction
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function updateQuickCategories() {
+    const typeSelect = document.getElementById('quick_type');
+    const categorySelect = document.getElementById('quick_category');
+    
+    // Clear existing options
+    categorySelect.innerHTML = '<option value="">Select category...</option>';
+    
+    if (typeSelect.value) {
+        try {
+            const response = await fetch(`/api/categories/${typeSelect.value}`);
+            const categories = await response.json();
+            
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category.name;
+                option.textContent = category.name;
+                categorySelect.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Error fetching categories:', error);
+        }
+    }
+}
+
+// Set default account if only one exists
+document.addEventListener('DOMContentLoaded', function() {
+    const accountSelect = document.getElementById('quick_account');
+    if (accountSelect && accountSelect.options.length === 2) { // Only "Select account..." and one actual account
+        accountSelect.selectedIndex = 1;
+    }
+});
+</script>
+{% endblock %}

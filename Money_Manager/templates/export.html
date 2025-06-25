@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Export & Backup - Money Manager{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">Export & Backup</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-download me-2"></i>Export Data</h5>
+            </div>
+            <div class="card-body">
+                <h6>Export Transactions (CSV)</h6>
+                <p class="text-muted">Download your transaction data as a CSV file.</p>
+                <div class="btn-group-vertical d-grid gap-2 mb-3">
+                    <a href="{{ url_for('export_transactions_csv') }}" class="btn btn-outline-primary">
+                        <i class="fas fa-file-csv me-2"></i>All Transactions
+                    </a>
+                    <a href="{{ url_for('export_transactions_csv', days=30) }}" class="btn btn-outline-primary">
+                        <i class="fas fa-file-csv me-2"></i>Last 30 Days
+                    </a>
+                    <a href="{{ url_for('export_transactions_csv', days=7) }}" class="btn btn-outline-primary">
+                        <i class="fas fa-file-csv me-2"></i>Last 7 Days
+                    </a>
+                </div>
+                
+                <hr>
+                
+                <h6>Export Summary (CSV)</h6>
+                <p class="text-muted">Download financial summary and category breakdown.</p>
+                <a href="{{ url_for('export_summary_csv') }}" class="btn btn-outline-success">
+                    <i class="fas fa-chart-bar me-2"></i>Download Summary
+                </a>
+                
+                <hr>
+                
+                <h6>Generate PDF Report</h6>
+                <p class="text-muted">Create a comprehensive financial report.</p>
+                <a href="{{ url_for('export_pdf_report') }}" class="btn btn-outline-danger">
+                    <i class="fas fa-file-pdf me-2"></i>Generate PDF Report
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-database me-2"></i>Database Backup</h5>
+            </div>
+            <div class="card-body">
+                <h6>Create Backup</h6>
+                <p class="text-muted">Download a complete backup of your database.</p>
+                <a href="{{ url_for('create_backup') }}" class="btn btn-primary">
+                    <i class="fas fa-save me-2"></i>Create Backup
+                </a>
+                
+                <hr>
+                
+                <h6>Restore from Backup</h6>
+                <p class="text-muted text-danger">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    Warning: This will replace all current data!
+                </p>
+                
+                <form method="POST" action="{{ url_for('restore_backup') }}" enctype="multipart/form-data" 
+                      onsubmit="return confirm('Are you sure? This will replace all current data!')">
+                    <div class="mb-3">
+                        <input type="file" class="form-control" name="backup_file" accept=".db" required>
+                    </div>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-upload me-2"></i>Restore Backup
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle me-2"></i>Export Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6>CSV Files</h6>
+                        <ul class="small text-muted">
+                            <li>Can be opened in Excel, Google Sheets</li>
+                            <li>Suitable for data analysis</li>
+                            <li>Easy to import into other systems</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>PDF Reports</h6>
+                        <ul class="small text-muted">
+                            <li>Professional formatted reports</li>
+                            <li>Great for sharing or printing</li>
+                            <li>Includes charts and summaries</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>Database Backups</h6>
+                        <ul class="small text-muted">
+                            <li>Complete data backup</li>
+                            <li>Can restore entire application</li>
+                            <li>Recommended for regular backups</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

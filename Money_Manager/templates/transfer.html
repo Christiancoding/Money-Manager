@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block title %}Transfer Funds - Money Manager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="fas fa-exchange-alt me-2"></i>Transfer Between Accounts</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('transfer') }}">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="from_account" class="form-label">From Account *</label>
+                            <select class="form-select" name="from_account" id="from_account" required>
+                                <option value="">Select source account...</option>
+                                {% for account in accounts %}
+                                <option value="{{ account.id }}" data-balance="{{ account.current_balance }}">
+                                    {{ account.name }} - ${{ "%.2f"|format(account.current_balance) }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="to_account" class="form-label">To Account *</label>
+                            <select class="form-select" name="to_account" id="to_account" required>
+                                <option value="">Select destination account...</option>
+                                {% for account in accounts %}
+                                <option value="{{ account.id }}">
+                                    {{ account.name }} - ${{ "%.2f"|format(account.current_balance) }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="amount" class="form-label">Amount *</label>
+                            <div class="input-group">
+                                <span class="input-group-text">$</span>
+                                <input type="number" class="form-control" name="amount" id="amount" 
+                                       step="0.01" min="0.01" required>
+                            </div>
+                            <div id="balance-warning" class="form-text text-warning" style="display: none;">
+                                <i class="fas fa-exclamation-triangle"></i> Insufficient funds
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="date" class="form-label">Date</label>
+                            <input type="date" class="form-control" name="date" id="date" 
+                                   value="{{ moment.now().strftime('%Y-%m-%d') }}">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description (Optional)</label>
+                        <input type="text" class="form-control" name="description" id="description" 
+                               placeholder="e.g., Monthly savings transfer">
+                    </div>
+                    
+                    <!-- Transfer Preview -->
+                    <div id="transfer-preview" class="card bg-light mb-3" style="display: none;">
+                        <div class="card-body">
+                            <h6 class="card-title">Transfer Preview</h6>
+                            <div class="row text-center">
+                                <div class="col-5">
+                                    <div id="from-preview">
+                                        <strong id="from-name">-</strong><br>
+                                        <span class="text-muted">Current: $<span id="from-current">0.00</span></span><br>
+                                        <span class="text-danger">After: $<span id="from-after">0.00</span></span>
+                                    </div>
+                                </div>
+                                <div class="col-2 d-flex align-items-center justify-content-center">
+                                    <i class="fas fa-arrow-right fa-2x text-primary"></i>
+                                </div>
+                                <div class="col-5">
+                                    <div id="to-preview">
+                                        <strong id="to-name">-</strong><br>
+                                        <span class="text-muted">Current: $<span id="to-current">0.00</span></span><br>
+                                        <span class="text-success">After: $<span id="to-after">0.00</span></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('accounts') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Accounts
+                        </a>
+                        <button type="submit" class="btn btn-primary" id="transfer-btn" disabled>
+                            <i class="fas fa-exchange-alt me-2"></i>Complete Transfer
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Transfers -->
+<div class="row justify-content-center mt-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5>Recent Transfers</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Recent transfer transactions will appear here...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const fromSelect = document.getElementById('from_account');
+    const toSelect = document.getElementById('to_account');
+    const amountInput = document.getElementById('amount');
+    const transferBtn = document.getElementById('transfer-btn');
+    const transferPreview = document.getElementById('transfer-preview');
+    const balanceWarning = document.getElementById('balance-warning');
+    
+    function updatePreview() {
+        const fromOption = fromSelect.selectedOptions[0];
+        const toOption = toSelect.selectedOptions[0];
+        const amount = parseFloat(amountInput.value) || 0;
+        
+        if (fromOption && toOption && amount > 0 && fromSelect.value !== toSelect.value) {
+            const fromBalance = parseFloat(fromOption.dataset.balance);
+            const toBalance = parseFloat(toSelect.dataset.balance);
+            
+            // Update preview
+            document.getElementById('from-name').textContent = fromOption.textContent.split(' - ')[0];
+            document.getElementById('from-current').textContent = fromBalance.toFixed(2);
+            document.getElementById('from-after').textContent = (fromBalance - amount).toFixed(2);
+            
+            document.getElementById('to-name').textContent = toOption.textContent.split(' - ')[0];
+            document.getElementById('to-current').textContent = toBalance.toFixed(2);
+            document.getElementById('to-after').textContent = (toBalance + amount).toFixed(2);
+            
+            transferPreview.style.display = 'block';
+            
+            // Check for insufficient funds
+            if (fromBalance < amount) {
+                balanceWarning.style.display = 'block';
+                transferBtn.disabled = true;
+            } else {
+                balanceWarning.style.display = 'none';
+                transferBtn.disabled = false;
+            }
+        } else {
+            transferPreview.style.display = 'none';
+            transferBtn.disabled = true;
+            balanceWarning.style.display = 'none';
+        }
+    }
+    
+    // Prevent selecting same account for from and to
+    function updateAccountOptions() {
+        const fromValue = fromSelect.value;
+        const toValue = toSelect.value;
+        
+        // Reset all options
+        Array.from(toSelect.options).forEach(option => {
+            option.disabled = false;
+        });
+        Array.from(fromSelect.options).forEach(option => {
+            option.disabled = false;
+        });
+        
+        // Disable selected account in the other dropdown
+        if (fromValue) {
+            Array.from(toSelect.options).forEach(option => {
+                if (option.value === fromValue) {
+                    option.disabled = true;
+                }
+            });
+        }
+        
+        if (toValue) {
+            Array.from(fromSelect.options).forEach(option => {
+                if (option.value === toValue) {
+                    option.disabled = true;
+                }
+            });
+        }
+        
+        updatePreview();
+    }
+    
+    fromSelect.addEventListener('change', updateAccountOptions);
+    toSelect.addEventListener('change', updateAccountOptions);
+    amountInput.addEventListener('input', updatePreview);
+    
+    // Set today's date
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('date').value = today;
+});
+</script>
+{% endblock %}

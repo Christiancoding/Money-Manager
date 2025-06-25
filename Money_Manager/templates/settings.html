@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Money Manager{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Settings & Account Management</h2>
+    
+    <!-- Account Balance Section -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Account Balance Management</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong>Current Balance:</strong> ${{ "%.2f"|format(current_balance) }}</p>
+                    <p><strong>Calculated from Transactions:</strong> ${{ "%.2f"|format(calculated_balance) }}</p>
+                    {% if current_balance != calculated_balance %}
+                        <div class="alert alert-warning">
+                            <small>Balance mismatch detected. Consider reconciling your account.</small>
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6">
+                    <form method="POST" action="{{ url_for('update_balance') }}">
+                        <div class="form-group mb-3">
+                            <label for="balance">Update Balance:</label>
+                            <input type="number" step="0.01" class="form-control" id="balance" 
+                                   name="balance" value="{{ current_balance }}" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Update Balance</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Categories Section -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Custom Categories</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Add New Category</h6>
+                    <form method="POST" action="{{ url_for('add_custom_category') }}">
+                        <div class="form-group mb-2">
+                            <label for="category_name" class="form-label">Category Name *</label>
+                            <input type="text" class="form-control" name="name" id="category_name"
+                                placeholder="Category Name" required maxlength="50">
+                        </div>
+                        <div class="form-group mb-2">
+                            <label for="category_type" class="form-label">Type *</label>
+                            <select class="form-control" name="type" id="category_type" required>
+                                <option value="">Select Type</option>
+                                <option value="income">Income</option>
+                                <option value="expense">Expense</option>
+                            </select>
+                        </div>
+                        <div class="form-group mb-2">
+                            <label for="category_description" class="form-label">Description</label>
+                            <input type="text" class="form-control" name="description" id="category_description"
+                                placeholder="Description (optional)">
+                        </div>
+                        <button type="submit" class="btn btn-success">Add Category</button>
+                    </form>
+                </div>
+                <div class="col-md-6">
+                    <h6>Existing Custom Categories</h6>
+                    {% if custom_categories %}
+                        <div class="list-group">
+                            {% for category in custom_categories %}
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>{{ category.name }}</strong>
+                                    <span class="badge badge-{{ 'success' if category.type == 'income' else 'danger' }}">
+                                        {{ category.type.title() }}
+                                    </span>
+                                    {% if category.description %}
+                                        <br><small class="text-muted">{{ category.description }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted">No custom categories yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- CSV Import Section -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Import Transactions from CSV</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Upload CSV File</h6>
+                    <form method="POST" action="{{ url_for('import_csv') }}" enctype="multipart/form-data">
+                        <div class="form-group mb-3">
+                            <label for="csv_file">Select CSV File:</label>
+                            <input type="file" class="form-control" id="csv_file" name="csv_file" 
+                                   accept=".csv" required>
+                            <small class="form-text text-muted">
+                                Maximum file size: 5MB. Required columns: date, type, amount, category
+                            </small>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input type="checkbox" class="form-check-input" id="update_balance" 
+                                   name="update_balance" checked>
+                            <label class="form-check-label" for="update_balance">
+                                Recalculate account balance after import
+                            </label>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Import CSV</button>
+                    </form>
+                </div>
+                <div class="col-md-6">
+                <h6>CSV Format Requirements</h6>
+                <ul class="list-unstyled">
+                    <li><strong>Required columns:</strong> Date, Type, Amount, Category</li>
+                    <li><strong>Optional columns:</strong> Description, Note, Balance</li>
+                    <li><strong>Date format:</strong> YYYY-MM-DD, MM/DD/YYYY, or DD/MM/YYYY</li>
+                    <li><strong>Type:</strong> "income" or "expense"</li>
+                    <li><strong>Amount:</strong> Positive numbers only</li>
+                    <li><strong>Note:</strong> Column names may have leading spaces</li>
+                </ul>
+                    <a href="{{ url_for('download_csv_template') }}" class="btn btn-outline-secondary">
+                        Download Template
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Data Management Section -->
+    <div class="card mb-4">
+        <div class="card-header bg-danger text-white">
+            <h5>Data Management</h5>
+        </div>
+        <div class="mb-4">
+        <h6>Data Reconciliation</h6>
+        <p class="text-muted">Fix balance calculation issues caused by inconsistent transaction data.</p>
+        <form method="POST" action="{{ url_for('reconcile_data') }}">
+            <button type="submit" class="btn btn-warning">
+                <i class="fas fa-sync-alt me-2"></i>Reconcile Data
+            </button>
+        </form>
+        <hr>
+    </div>
+        <div class="card-body">
+            <div class="alert alert-danger">
+                <strong>Warning:</strong> This action will permanently delete all data and cannot be undone.
+                An automatic backup will be created before deletion.
+            </div>
+            <form method="POST" action="{{ url_for('clear_all_data') }}" 
+                  onsubmit="return confirm('Are you absolutely sure? This will delete ALL transactions, categories, and reset your balance to zero. Type CONFIRM_DELETE_ALL_DATA in the text field to proceed.');">
+                <div class="form-group mb-3">
+                <label for="confirmation">Type "CONFIRM_DELETE_ALL_DATA" to proceed:</label>
+                <input type="text" class="form-control" name="confirmation" id="confirmation"
+                    placeholder="Enter confirmation text" required>
+                </div>
+                <button type="submit" class="btn btn-danger">Clear All Data</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
