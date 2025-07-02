@@ -193,6 +193,12 @@ def add_transaction(amount: float, category: str, trans_type: str, description: 
             (amount, category, trans_type, description, date, account_id)
         )
         conn.commit()
+        # Check for IOU matching and auto-apply payments
+        try:
+            if trans_type == 'expense' and description:
+                _check_and_apply_iou_payment(description, amount, account_id)
+        except Exception as e:
+            logger.warning(f"IOU auto-matching failed: {e}")
         conn.close()
         
         # Automatically update account balance
@@ -947,7 +953,12 @@ def import_transactions_from_csv(csv_file_path: str, update_balance: bool = True
                         INSERT INTO transactions (date, type, amount, category, description, created_at)
                         VALUES (?, ?, ?, ?, ?, ?)
                         ''', (parsed_date, final_type, normalized_amount, category, full_description, parsed_date))
-                    
+                    # Check for IOU matching during import
+                    try:
+                        if final_type == 'expense' and full_description:
+                            _check_and_apply_iou_payment(full_description, normalized_amount, 1)  # Default account
+                    except Exception as e:
+                        logger.warning(f"IOU auto-matching failed during import: {e}")
                     logger.info(f"Inserted row {row_num}: {parsed_date}, {final_type}, {normalized_amount}, {category}")
                     imported_count += 1
                     
@@ -2517,3 +2528,59 @@ def initialize_database():
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
         raise
+def _check_and_apply_iou_payment(description: str, amount: float, account_id: Optional[int]) -> None:
+    """
+    Check if a transaction description matches an existing IOU and auto-apply payment.
+    
+    Args:
+        description: Transaction description to match against IOU debtors/creditors
+        amount: Payment amount
+        account_id: Account where payment occurred
+    """
+    try:
+        # Extract potential names from description
+        description_lower = description.lower()
+        
+        # Remove common prefixes/suffixes that might interfere with matching
+        clean_description = description_lower.replace('[auto-categorized]', '').strip()
+        
+        # Get all active IOUs
+        active_ious = get_ious(status=['pending', 'partially_paid'])
+        
+        for iou in active_ious:
+            debtor_name = iou['debtor_name'].lower()
+            creditor_name = iou['creditor_name'].lower()
+            
+            # Check if transaction description contains IOU participant name
+            name_match = False
+            matched_person = None
+            
+            if debtor_name in clean_description or clean_description in debtor_name:
+                name_match = True
+                matched_person = iou['debtor_name']
+            elif creditor_name in clean_description or clean_description in creditor_name:
+                name_match = True
+                matched_person = iou['creditor_name']
+            
+            if name_match:
+                remaining_balance = get_iou_remaining_balance(iou['id'])
+                if amount <= remaining_balance + 0.01:  # Allow small rounding differences
+                    
+                    # Apply the payment
+                    payment_notes = f"Auto-matched from transaction: {description[:100]}"
+                    success = add_iou_payment(
+                        iou['id'], 
+                        amount, 
+                        "Auto-matched", 
+                        payment_notes, 
+                        account_id
+                    )
+                    
+                    if success:
+                        logger.info(f"Auto-applied ${amount:.2f} payment to IOU {iou['id']} for {matched_person}")
+                        break  # Only match first IOU found
+                    else:
+                        logger.warning(f"Failed to auto-apply payment to IOU {iou['id']}")
+                        
+    except Exception as e:
+        logger.error(f"Error in IOU auto-matching: {e}", exc_info=True)
