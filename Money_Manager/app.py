@@ -451,7 +451,7 @@ def import_csv():
         
         # Get import options
         update_balance = request.form.get('update_balance') == 'on'
-        
+        import_mode = request.form.get('import_mode', 'append')  # Default to append mode
         # Save file temporarily for processing
         filename = secure_filename(file.filename)
         
@@ -460,7 +460,7 @@ def import_csv():
                 file.save(tmp_file.name)
                 
                 # Process the CSV import
-                result = database.import_transactions_from_csv(tmp_file.name, update_balance)
+                result = database.import_transactions_from_csv(tmp_file.name, update_balance, import_mode)
                 
                 if result['success']:
                     # Automatically fix balance issues after successful import
@@ -468,7 +468,8 @@ def import_csv():
                         balance_fix_result = auto_fix_balances_after_import()
                         
                         if balance_fix_result['success']:
-                            success_msg = f"Import completed! {result['imported_count']} transactions imported."
+                            mode_text = "replaced all existing data with" if result.get('import_mode') == 'replace' else "imported"
+                            success_msg = f"Import completed! {mode_text} {result['imported_count']} transactions."
                             if balance_fix_result.get('balance_updated'):
                                 success_msg += f" Account balance automatically reconciled to ${balance_fix_result['new_balance']:.2f}."
                             
@@ -889,12 +890,13 @@ def add_iou():
         amount = float(request.form.get('amount', 0))
         description = request.form.get('description', '').strip()
         due_date = request.form.get('due_date') or None
+        payment_identifier = request.form.get('payment_identifier', '').strip()
         
         if not creditor_name or not debtor_name or amount <= 0:
             flash('All fields are required and amount must be positive.', 'error')
             return redirect(url_for('ious'))
         
-        success = database.add_iou(creditor_name, debtor_name, amount, description, due_date)
+        success = database.add_iou(creditor_name, debtor_name, amount, description, due_date, payment_identifier)
         
         if success:
             flash(f'IOU added: {debtor_name} owes {creditor_name} ${amount:.2f}', 'success')
@@ -1245,7 +1247,6 @@ def delete_iou_route(iou_id: int):
     
     return redirect(url_for('ious'))
 from typing import Dict, Any
-
 def auto_fix_balances_after_import() -> Dict[str, Any]:
     """
     Automatically fix balance issues after CSV import.
@@ -1371,5 +1372,52 @@ def edit_iou_payment(payment_id: int):
     except Exception as e:
         app.logger.error(f"Error retrieving payment {payment_id}: {e}", exc_info=True)
         return jsonify({'error': 'Error retrieving payment details'}), 500
+@app.route('/process_automatic_payment', methods=['POST'])
+def process_automatic_payment_route():
+    """Process automatic payment from external source (bank feed, etc.)."""
+    try:
+        data = request.get_json() if request.is_json else request.form
+        
+        payment_identifier = data.get('payment_identifier', '').strip()
+        payment_amount = float(data.get('payment_amount', 0))
+        transaction_description = data.get('description', '').strip()
+        account_id_str = data.get('account_id')
+        account_id = int(account_id_str) if account_id_str else None
+        
+        if not payment_identifier:
+            return jsonify({"success": False, "error": "Payment identifier required"}), 400
+        
+        if payment_amount <= 0:
+            return jsonify({"success": False, "error": "Valid payment amount required"}), 400
+        
+        # Process the automatic payment
+        result = database.process_automatic_payment(
+            payment_identifier, payment_amount, transaction_description, account_id
+        )
+        
+        if result["success"]:
+            app.logger.info(f"Automatic payment processed: {payment_identifier} - ${payment_amount:.2f}")
+            
+            # Create success response with details
+            response_data = {
+                "success": True,
+                "message": f"Payment of ${result['payment_applied']:.2f} automatically applied",
+                "iou_details": result["iou_details"],
+                "remaining_balance": result["remaining_balance"],
+                "fully_paid": result["fully_paid"]
+            }
+            
+            if result.get("overpayment"):
+                response_data["warning"] = result["warning"]
+            
+            return jsonify(response_data)
+        else:
+            return jsonify(result), 400
+            
+    except ValueError:
+        return jsonify({"success": False, "error": "Invalid payment amount format"}), 400
+    except Exception as e:
+        app.logger.error(f"Error processing automatic payment: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 if __name__ == '__main__':
     app.run(debug=True)

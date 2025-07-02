@@ -761,7 +761,7 @@ def _classify_by_amount_sign(amount: float, description: str = "") -> tuple[str,
         return 'income', 'high'
     else:
         return 'expense', 'high'
-def import_transactions_from_csv(csv_file_path: str, update_balance: bool = True) -> Dict[str, Any]:
+def import_transactions_from_csv(csv_file_path: str, update_balance: bool = True, import_mode: str = 'append') -> Dict[str, Any]:
     """
     Import transactions from CSV with comprehensive validation and error handling.
     
@@ -772,6 +772,18 @@ def import_transactions_from_csv(csv_file_path: str, update_balance: bool = True
         return {"success": False, "error": "File not found"}
     
     conn = get_db_connection()
+    # Handle replace mode - clear existing transactions
+    if import_mode == 'replace':
+        try:
+            logger.info("Replace mode selected - clearing existing transactions")
+            conn.execute("DELETE FROM transactions")
+            conn.execute("DELETE FROM categories WHERE id > 8")  # Keep default categories
+            conn.commit()
+            logger.info("Existing transactions cleared successfully")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Failed to clear existing transactions: {e}")
+            return {"success": False, "error": f"Failed to clear existing data: {str(e)}"}
     imported_count = 0
     error_count = 0
     errors: List[str] = []
@@ -989,7 +1001,8 @@ def import_transactions_from_csv(csv_file_path: str, update_balance: bool = True
                 "errors": errors[:10],  # Limit error messages for UI
                 "total_errors": len(errors),
                 "type_mappings": type_mappings,
-                "mapping_summary": f"{type_mappings['confident']} confident, {type_mappings['uncertain']} uncertain mappings"
+                "mapping_summary": f"{type_mappings['confident']} confident, {type_mappings['uncertain']} uncertain mappings",
+                "import_mode": import_mode
             }
             
     except PermissionError:
@@ -1909,14 +1922,16 @@ def migrate_ious_table():
         raise
     finally:
         conn.close()
-def add_iou(creditor_name: str, debtor_name: str, amount: float, description: Optional[str] = None, due_date: Optional[str] = None) -> bool:
+def add_iou(creditor_name: str, debtor_name: str, amount: float, 
+           description: str = "", due_date: Optional[str] = None, 
+           payment_identifier: Optional[str] = None) -> bool:
     """Add new IOU/pending transaction."""
     conn = get_db_connection()
     try:
         conn.execute('''
-            INSERT INTO ious (creditor_name, debtor_name, amount, description, due_date) 
-            VALUES (?, ?, ?, ?, ?)
-        ''', (creditor_name.strip(), debtor_name.strip(), amount, description, due_date))
+            INSERT INTO ious (creditor_name, debtor_name, amount, description, due_date, payment_identifier)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (creditor_name, debtor_name, amount, description, due_date, payment_identifier))
         conn.commit()
         logger.info(f"IOU added: {creditor_name} owes {debtor_name} ${amount}")
         return True
@@ -2317,6 +2332,108 @@ def delete_iou(iou_id: int, confirmation_token: Optional[str] = None) -> Dict[st
         conn.rollback()
         logger.error(f"Unexpected error deleting IOU {iou_id}: {e}", exc_info=True)
         return {"success": False, "error": f"Unexpected error: {str(e)}"}
+    finally:
+        conn.close()
+def add_payment_identifier_column():
+    """Add payment_identifier column to ious table for automatic matching."""
+    conn = get_db_connection()
+    try:
+        # Check if column already exists
+        cursor = conn.execute("PRAGMA table_info(ious)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        if 'payment_identifier' not in columns:
+            conn.execute('ALTER TABLE ious ADD COLUMN payment_identifier TEXT')
+            conn.commit()
+            logger.info("Added payment_identifier column to ious table")
+        
+    except sqlite3.Error as e:
+        logger.error(f"Error adding payment_identifier column: {e}")
+    finally:
+        conn.close()
+def process_automatic_payment(payment_identifier: str, payment_amount: float, 
+                            transaction_description: str = "", account_id: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Process automatic payment matching based on payment identifier.
+    
+    Args:
+        payment_identifier: The identifier found in the payment (e.g., "PAY_MENOW")
+        payment_amount: Amount of the payment
+        transaction_description: Full transaction description
+        account_id: Account where payment was received
+    
+    Returns:
+        Dictionary with processing results and status
+    """
+    conn = get_db_connection()
+    try:
+        # Find IOUs with matching payment identifiers
+        matching_ious = conn.execute('''
+            SELECT * FROM ious 
+            WHERE payment_identifier = ? 
+            AND status IN ('pending', 'partially_paid')
+            ORDER BY created_date ASC
+        ''', (payment_identifier,)).fetchall()
+        
+        if not matching_ious:
+            logger.warning(f"No matching IOUs found for payment identifier: {payment_identifier}")
+            return {
+                "success": False,
+                "error": f"No active IOUs found with identifier '{payment_identifier}'",
+                "payment_amount": payment_amount
+            }
+        
+        # For multiple matches, apply to oldest first
+        target_iou = matching_ious[0]
+        iou_id = target_iou['id']
+        remaining_balance = get_iou_remaining_balance(iou_id)
+        
+        # Validate payment amount
+        if payment_amount <= 0:
+            return {"success": False, "error": "Invalid payment amount"}
+        
+        # Apply payment (can be partial or overpayment)
+        actual_payment = min(payment_amount, remaining_balance)
+        
+        # Add the payment with automatic processing note
+        payment_notes = f"Auto-processed: {transaction_description[:100]}"
+        success = add_iou_payment(iou_id, actual_payment, "Automatic", payment_notes, account_id)
+        
+        if not success:
+            return {"success": False, "error": "Failed to process payment"}
+        
+        # Calculate results
+        new_remaining = remaining_balance - actual_payment
+        is_fully_paid = new_remaining <= 0.01
+        
+        result = {
+            "success": True,
+            "iou_id": iou_id,
+            "payment_applied": actual_payment,
+            "remaining_balance": new_remaining,
+            "fully_paid": is_fully_paid,
+            "iou_details": {
+                "creditor": target_iou['creditor_name'],
+                "debtor": target_iou['debtor_name'],
+                "description": target_iou['description'],
+                "original_amount": float(target_iou['amount'])
+            }
+        }
+        
+        # Handle overpayment
+        if payment_amount > actual_payment:
+            result["overpayment"] = payment_amount - actual_payment
+            result["warning"] = f"Overpayment of ${result['overpayment']:.2f} detected"
+        
+        logger.info(f"Automatic payment processed: ${actual_payment:.2f} applied to IOU {iou_id}")
+        return result
+        
+    except sqlite3.Error as e:
+        logger.error(f"Database error processing automatic payment: {e}")
+        return {"success": False, "error": f"Database error: {str(e)}"}
+    except Exception as e:
+        logger.error(f"Unexpected error processing automatic payment: {e}", exc_info=True)
+        return {"success": False, "error": f"Processing error: {str(e)}"}
     finally:
         conn.close()
 def _auto_update_account_balance(account_id: int) -> bool:

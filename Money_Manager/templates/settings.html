@@ -109,6 +109,27 @@
                             <small class="form-text text-muted">
                                 Maximum file size: 5MB. Required columns: date, type, amount, category
                             </small>
+                                <div class="form-group mb-3">
+                                <label class="form-label">Import Mode:</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="import_mode" 
+                                        id="import_append" value="append" checked>
+                                    <label class="form-check-label" for="import_append">
+                                        <strong>Append</strong> - Add new transactions to existing data
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="import_mode" 
+                                        id="import_replace" value="replace">
+                                    <label class="form-check-label" for="import_replace">
+                                        <strong>Replace</strong> - Clear all existing transactions and import only new data
+                                    </label>
+                                </div>
+                                <small class="form-text text-warning">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    Replace mode will permanently delete all existing transactions!
+                                </small>
+                            </div>
                         </div>
                         <div class="form-check mb-3">
                             <input type="checkbox" class="form-check-input" id="update_balance" 

@@ -251,6 +251,12 @@
                         <label for="due_date" class="form-label">Due Date (Optional)</label>
                         <input type="date" class="form-control" name="due_date" id="due_date">
                     </div>
+                    <div class="mb-3">
+                        <label for="payment_identifier" class="form-label">Payment Identifier (Optional)</label>
+                        <input type="text" class="form-control" id="payment_identifier" name="payment_identifier" 
+                            placeholder="e.g., AMAZON.COM" maxlength="50">
+                        <div class="form-text">Unique identifier for automatic payment matching</div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
