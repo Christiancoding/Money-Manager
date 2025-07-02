@@ -1912,7 +1912,9 @@ def migrate_ious_table():
             if 'notes' not in column_names:
                 logger.info("Adding notes column to ious table")
                 conn.execute('ALTER TABLE ious ADD COLUMN notes TEXT')
-        
+            if 'payment_identifier' not in column_names:
+                logger.info("Adding payment_identifier column to ious table")
+                conn.execute('ALTER TABLE ious ADD COLUMN payment_identifier TEXT') 
         conn.commit()
         logger.info("IOUs table migration completed successfully")
         
@@ -2346,9 +2348,12 @@ def add_payment_identifier_column():
             conn.execute('ALTER TABLE ious ADD COLUMN payment_identifier TEXT')
             conn.commit()
             logger.info("Added payment_identifier column to ious table")
+        else:
+            logger.info("payment_identifier column already exists")
         
     except sqlite3.Error as e:
         logger.error(f"Error adding payment_identifier column: {e}")
+        raise
     finally:
         conn.close()
 def process_automatic_payment(payment_identifier: str, payment_amount: float, 
@@ -2499,3 +2504,16 @@ def verify_iou_tables():
         return False
     finally:
         conn.close()
+def initialize_database():
+    """Initialize and migrate all database tables."""
+    try:
+        create_ious_table()
+        create_iou_payments_table()
+        migrate_ious_table()  # This should already be here
+        # Add this line if it's not already present:
+        add_payment_identifier_column()
+        
+        logger.info("Database initialization completed successfully")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+        raise
