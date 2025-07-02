@@ -1941,16 +1941,17 @@ def add_iou(creditor_name: str, debtor_name: str, amount: float,
     """Add new IOU/pending transaction."""
     conn = get_db_connection()
     try:
-        conn.execute('''
+        cursor = conn.cursor()
+        cursor.execute('''
             INSERT INTO ious (creditor_name, debtor_name, amount, description, due_date, payment_identifier)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (creditor_name, debtor_name, amount, description, due_date, payment_identifier))
         conn.commit()
         logger.info(f"IOU added: {creditor_name} owes {debtor_name} ${amount}")
-        return True
+        return cursor.lastrowid
     except sqlite3.Error as e:
         logger.error(f"Failed to add IOU: {e}")
-        return False
+        return None
     finally:
         conn.close()
 
@@ -2536,6 +2537,9 @@ def _check_and_apply_iou_payment(description: str, amount: float, account_id: Op
         description: Transaction description to match against IOU debtors/creditors
         amount: Payment amount
         account_id: Account where payment occurred
+    
+    Returns:
+        None
     """
     try:
         # Extract potential names from description
@@ -2584,3 +2588,124 @@ def _check_and_apply_iou_payment(description: str, amount: float, account_id: Op
                         
     except Exception as e:
         logger.error(f"Error in IOU auto-matching: {e}", exc_info=True)
+def retroactive_match_iou_payment(iou_id: int, payment_identifier: Optional[str] = None, 
+                                 creditor_name: str = '', debtor_name: str = '') -> Dict[str, Any]:
+    """
+    Search for existing transactions that might match a newly created IOU
+    and automatically apply them as payments.
+    
+    Args:
+        iou_id: ID of the newly created IOU
+        payment_identifier: Payment identifier to search for
+        creditor_name: Creditor name for name-based matching
+        debtor_name: Debtor name for name-based matching
+    
+    Returns:
+        Dictionary with matching results and applied payments
+    """
+    conn = get_db_connection()
+    try:
+        matched_transactions = []
+        total_applied = 0.0
+        
+        # Get IOU details
+        iou = conn.execute('SELECT * FROM ious WHERE id = ?', (iou_id,)).fetchone()
+        if not iou:
+            return {"success": False, "error": "IOU not found"}
+        
+        iou_amount = float(iou['amount'])
+        remaining_balance = get_iou_remaining_balance(iou_id)
+        
+        # Search criteria in order of preference
+        search_queries = []
+        
+        # 1. Payment identifier match (most specific)
+        if payment_identifier:
+            search_queries.append({
+                "query": "SELECT * FROM transactions WHERE description LIKE ? ORDER BY date DESC",
+                "params": (f'%{payment_identifier}%',),
+                "match_type": "payment_identifier"
+            })
+        
+        # 2. Name-based matching (broader)
+        names_to_search = [name.strip() for name in [creditor_name, debtor_name] if name.strip()]
+        for name in names_to_search:
+            if name.lower() != 'me':  # Skip 'me' entries
+                search_queries.append({
+                    "query": "SELECT * FROM transactions WHERE description LIKE ? ORDER BY date DESC",
+                    "params": (f'%{name}%',),
+                    "match_type": f"name_match_{name}"
+                })
+        
+        # Execute searches and find matching transactions
+        for search in search_queries:
+            if total_applied >= iou_amount:  # Stop if IOU is fully covered
+                break
+                
+            transactions = conn.execute(search["query"], search["params"]).fetchall()
+            
+            for transaction in transactions:
+                if total_applied >= iou_amount:
+                    break
+                
+                trans_amount = abs(float(transaction['amount']))
+                trans_date = transaction['date']
+                trans_desc = transaction['description']
+                account_id = transaction['account_id']
+                
+                # Check if this transaction could reasonably match the IOU
+                # (within reasonable amount range and not too old)
+                if trans_amount <= remaining_balance + 0.01:  # Allow small rounding differences
+                    # Apply this transaction as a payment
+                    payment_amount = min(trans_amount, remaining_balance)
+                    payment_notes = f"Retroactive match: {trans_desc[:100]} (Match type: {search['match_type']})"
+                    
+                    success = add_iou_payment(
+                        iou_id, 
+                        payment_amount, 
+                        "Retroactive Match", 
+                        payment_notes, 
+                        account_id
+                    )
+                    
+                    if success:
+                        matched_transactions.append({
+                            "transaction_id": transaction['id'],
+                            "amount": payment_amount,
+                            "date": trans_date,
+                            "description": trans_desc,
+                            "match_type": search['match_type']
+                        })
+                        total_applied += payment_amount
+                        remaining_balance -= payment_amount
+                        
+                        logger.info(f"Retroactively applied ${payment_amount:.2f} from transaction "
+                                  f"'{trans_desc}' to IOU {iou_id}")
+                        
+                        # Usually only match one transaction per search type to avoid over-matching
+                        break
+        
+        # Prepare result
+        result = {
+            "success": True,
+            "iou_id": iou_id,
+            "matched_transactions": matched_transactions,
+            "total_applied": total_applied,
+            "remaining_balance": remaining_balance,
+            "fully_paid": remaining_balance <= 0.01
+        }
+        
+        if matched_transactions:
+            logger.info(f"Retroactive matching completed: ${total_applied:.2f} applied to IOU {iou_id} "
+                       f"from {len(matched_transactions)} transaction(s)")
+        
+        return result
+        
+    except sqlite3.Error as e:
+        logger.error(f"Database error in retroactive matching: {e}")
+        return {"success": False, "error": f"Database error: {str(e)}"}
+    except Exception as e:
+        logger.error(f"Unexpected error in retroactive matching: {e}", exc_info=True)
+        return {"success": False, "error": f"Processing error: {str(e)}"}
+    finally:
+        conn.close()

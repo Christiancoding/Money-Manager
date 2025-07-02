@@ -886,7 +886,7 @@ def ious():
 
 @app.route('/add_iou', methods=['POST'])
 def add_iou():
-    """Add new IOU."""
+    """Add new IOU with retroactive payment matching."""
     try:
         creditor_name = request.form.get('creditor_name', '').strip()
         debtor_name = request.form.get('debtor_name', '').strip()
@@ -899,10 +899,37 @@ def add_iou():
             flash('All fields are required and amount must be positive.', 'error')
             return redirect(url_for('ious'))
         
-        success = database.add_iou(creditor_name, debtor_name, amount, description, due_date, payment_identifier)
+        # Create the IOU first
+        iou_id = database.add_iou(creditor_name, debtor_name, amount, description, due_date, payment_identifier)
         
-        if success:
-            flash(f'IOU added: {debtor_name} owes {creditor_name} ${amount:.2f}', 'success')
+        if iou_id:
+            success_message = f'IOU added: {debtor_name} owes {creditor_name} ${amount:.2f}'
+            
+            # Attempt retroactive payment matching if payment identifier or names provided
+            if payment_identifier or any(name.lower() != 'me' for name in [creditor_name, debtor_name]):
+                try:
+                    match_result = database.retroactive_match_iou_payment(
+                        iou_id, payment_identifier, creditor_name, debtor_name
+                    )
+                    
+                    if match_result["success"] and match_result["matched_transactions"]:
+                        total_applied = match_result["total_applied"]
+                        transaction_count = len(match_result["matched_transactions"])
+                        
+                        if match_result["fully_paid"]:
+                            success_message += f' - Automatically matched and fully paid with ${total_applied:.2f} from {transaction_count} existing transaction(s)!'
+                        else:
+                            remaining = match_result["remaining_balance"]
+                            success_message += f' - Automatically applied ${total_applied:.2f} from {transaction_count} existing transaction(s). Remaining balance: ${remaining:.2f}'
+                        
+                        app.logger.info(f"Retroactive matching applied ${total_applied:.2f} to new IOU {iou_id}")
+                    
+                except Exception as e:
+                    app.logger.warning(f"Retroactive matching failed for IOU {iou_id}: {e}")
+                    # Don't fail the whole operation if matching fails
+                    success_message += ' (Note: Automatic payment matching unavailable)'
+            
+            flash(success_message, 'success')
         else:
             flash('Error adding IOU. Please try again.', 'error')
             
