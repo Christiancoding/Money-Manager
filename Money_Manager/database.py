@@ -2476,3 +2476,26 @@ def _auto_update_account_balance(account_id: int) -> bool:
         if conn is not None:
             conn.close()
         return False
+def verify_iou_tables():
+    """Verify IOU tables exist and have correct schema."""
+    conn = get_db_connection()
+    try:
+        # Check if ious table exists
+        result = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ious'").fetchone()
+        if not result:
+            logger.error("IOUs table does not exist")
+            return False
+        
+        # Check if iou_payments table exists
+        result = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='iou_payments'").fetchone()
+        if not result:
+            logger.error("IOU payments table does not exist")
+            return False
+            
+        logger.info("All IOU tables verified successfully")
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Error verifying IOU tables: {e}")
+        return False
+    finally:
+        conn.close()

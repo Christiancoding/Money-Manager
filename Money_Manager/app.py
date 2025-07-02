@@ -15,6 +15,9 @@ app.static_folder = 'static'
 app.static_url_path = '/static'
 # Initialize database on startup
 database.init_database()
+# Verify database tables
+if not database.verify_iou_tables():
+    app.logger.error("IOU tables missing - please run database migration")
 
 @app.route('/')
 def index():
@@ -908,7 +911,7 @@ def add_iou():
     except Exception as e:
         app.logger.error(f"Error adding IOU: {e}", exc_info=True)
         flash('Error adding IOU. Please try again.', 'error')
-    
+
     return redirect(url_for('ious'))
 
 @app.route('/settle_iou/<int:iou_id>', methods=['POST'])
