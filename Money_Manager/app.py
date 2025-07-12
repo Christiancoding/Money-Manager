@@ -31,17 +31,17 @@ def index():
     
     # Get account summary for multi-account overview
     accounts_summary = database.get_account_summary()
-    
+
     # Calculate total portfolio value with proper type conversion and logging
     total_balance = 0.0
     try:
         for acc in accounts_summary:
-            balance = float(acc.get('current_balance', 0.0))
-            total_balance += balance
-            app.logger.debug(f"Account {acc.get('name', 'Unknown')}: ${balance:.2f}")
-        
+            if acc.get('include_in_total'):
+                balance = float(acc.get('current_balance', 0.0))
+                total_balance += balance
+
         app.logger.info(f"Total portfolio balance calculated: ${total_balance:.2f}")
-        
+
     except Exception as e:
         app.logger.error(f"Error calculating total balance: {e}")
         total_balance = 0.0
@@ -666,24 +666,25 @@ def add_account():
         account_type = request.form.get('type', '').strip()
         description = request.form.get('description', '').strip()
         initial_balance = float(request.form.get('initial_balance', 0))
-        
+        include_in_total = 'include_in_total' in request.form
+
         if not name or not account_type:
             flash('Account name and type are required.', 'error')
             return redirect(url_for('accounts'))
-        
-        success = database.add_account(name, account_type, description, initial_balance)
-        
+
+        success = database.add_account(name, account_type, description, initial_balance, include_in_total)
+
         if success:
             flash(f'Account "{name}" added successfully!', 'success')
         else:
             flash(f'Account "{name}" already exists.', 'error')
-            
+
     except ValueError:
         flash('Please enter a valid initial balance.', 'error')
     except Exception as e:
         app.logger.error(f"Error adding account: {e}", exc_info=True)
         flash('Error adding account. Please try again.', 'error')
-    
+
     return redirect(url_for('accounts'))
 
 @app.route('/api/accounts')
@@ -795,24 +796,25 @@ def edit_account(account_id: int):
             name = request.form.get('name', '').strip()
             account_type = request.form.get('type', '').strip()
             description = request.form.get('description', '').strip()
-            
+            include_in_total = 'include_in_total' in request.form
+
             if not name or not account_type:
                 flash('Account name and type are required.', 'error')
                 return redirect(url_for('accounts'))
-            
-            success = database.update_account(account_id, name, account_type, description)
-            
+
+            success = database.update_account(account_id, name, account_type, description, include_in_total)
+
             if success:
                 flash(f'Account "{name}" updated successfully!', 'success')
             else:
                 flash('Account not found or name already exists.', 'error')
-                
+
         except Exception as e:
             app.logger.error(f"Error updating account: {e}", exc_info=True)
             flash('Error updating account. Please try again.', 'error')
-        
+
         return redirect(url_for('accounts'))
-    
+
     # GET request - return account data as JSON for modal population
     account = database.get_account_by_id(account_id)
     if account:
@@ -864,21 +866,26 @@ def delete_account(account_id: int):
 def ious():
     """IOU management page."""
     try:
+        account_id = request.args.get('account_id', type=int)
         # Get active IOUs (both pending and partially paid)
-        pending_ious = database.get_ious('pending')  # This now includes partially_paid
-        paid_ious = database.get_ious('paid')
+        pending_ious = database.get_ious('pending', account_id=account_id)
+        paid_ious = database.get_ious('paid', account_id=account_id)
         accounts = database.get_accounts()
-        
+        selected_account = None
+        if account_id:
+            selected_account = next((acc for acc in accounts if acc['id'] == account_id), None)
+
         # Calculate summary stats - only count actual remaining balances
         total_owed_to_me = sum(iou['remaining_balance'] for iou in pending_ious if iou['creditor_name'].lower() == 'me')
         total_i_owe = sum(iou['remaining_balance'] for iou in pending_ious if iou['debtor_name'].lower() == 'me')
-        
+
         return render_template('ious.html',
                              pending_ious=pending_ious,
                              paid_ious=paid_ious,
                              accounts=accounts,
                              total_owed_to_me=total_owed_to_me,
-                             total_i_owe=total_i_owe)
+                             total_i_owe=total_i_owe,
+                             selected_account=selected_account)
     except Exception as e:
         app.logger.error(f"Error loading IOUs: {e}", exc_info=True)
         flash('Error loading IOUs. Please try again.', 'error')

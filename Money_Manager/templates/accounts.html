@@ -147,6 +147,12 @@
                         <input type="number" class="form-control" name="initial_balance" id="initial_balance" step="0.01" value="0.00">
                         <div class="form-text">This will be the starting balance for this account.</div>
                     </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="include_in_total" id="include_in_total" checked>
+                        <label class="form-check-label" for="include_in_total">
+                            Include in total balance
+                        </label>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -182,6 +188,12 @@
                     <div class="mb-3">
                         <label for="edit_description" class="form-label">Description</label>
                         <input type="text" class="form-control" name="description" id="edit_description">
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="include_in_total" id="edit_include_in_total">
+                        <label class="form-check-label" for="edit_include_in_total">
+                            Include in total balance
+                        </label>
                     </div>
                     <div class="alert alert-info">
                         <small><i class="fas fa-info-circle"></i> Account balance will not be changed by editing details.</small>

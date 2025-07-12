@@ -17,9 +17,29 @@ def get_db_connection():
     conn.execute('PRAGMA busy_timeout = 10000')  # 10 second busy timeout
     conn.execute('PRAGMA journal_mode = WAL')     # Enable WAL mode for better concurrency
     return conn
+def _migrate_accounts_table():
+    """Adds the include_in_total column to the accounts table if it doesn't exist."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute("PRAGMA table_info(accounts)")
+        columns = [row['name'] for row in cursor.fetchall()]
 
+        if 'include_in_total' not in columns:
+            logger.info("Migrating accounts table: Adding 'include_in_total' column.")
+            conn.execute('ALTER TABLE accounts ADD COLUMN include_in_total BOOLEAN DEFAULT 1')
+            conn.commit()
+            logger.info("Migration successful.")
+        else:
+            logger.info("'include_in_total' column already exists.")
+
+    except Exception as e:
+        logger.error(f"Failed to migrate accounts table: {e}")
+    finally:
+        conn.close()
 def init_database():
     conn = get_db_connection()
+    # Migrate accounts table to add include_in_total column
+    _migrate_accounts_table()
     # Create accounts table
     conn.execute('''
         CREATE TABLE IF NOT EXISTS accounts (
@@ -71,7 +91,6 @@ def init_database():
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
                     type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-                    color TEXT DEFAULT '#007bff',
                     description TEXT,
                     created_date DATE DEFAULT CURRENT_DATE,
                     is_active BOOLEAN DEFAULT 1
@@ -1221,7 +1240,8 @@ def create_accounts_table():
                 current_balance DECIMAL(10, 2) DEFAULT 0.00,
                 is_active BOOLEAN DEFAULT 1,
                 created_date DATE DEFAULT CURRENT_DATE,
-                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                include_in_total BOOLEAN DEFAULT 1
             )
         ''')
         
@@ -1275,20 +1295,27 @@ def get_accounts(active_only: bool = True) -> List[Dict[str, Any]]:
     finally:
         conn.close()
 
-def add_account(name: str, account_type: str, description: Optional[str] = None, initial_balance: float = 0.00):
+def add_account(name: str, account_type: str, description: Optional[str] = None, initial_balance: float = 0.00, include_in_total: bool = True):
     """Add new account."""
     conn = get_db_connection()
     try:
+        # Check if account with the same name already exists (case-insensitive)
+        existing_account = conn.execute(
+            'SELECT id FROM accounts WHERE LOWER(name) = ?',
+            (name.strip().lower(),)
+        ).fetchone()
+
+        if existing_account:
+            logger.warning(f"Account with name '{name}' already exists.")
+            return False
+
         conn.execute('''
-            INSERT INTO accounts (name, type, description, initial_balance, current_balance) 
-            VALUES (?, ?, ?, ?, ?)
-        ''', (name.strip(), account_type, description, initial_balance, initial_balance))
+            INSERT INTO accounts (name, type, description, initial_balance, current_balance, include_in_total)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (name.strip(), account_type, description, initial_balance, initial_balance, include_in_total))
         conn.commit()
         logger.info(f"Account added: {name} ({account_type})")
         return True
-    except sqlite3.IntegrityError:
-        logger.warning(f"Account already exists: {name}")
-        return False
     except sqlite3.Error as e:
         logger.error(f"Failed to add account: {e}")
         return False
@@ -1697,24 +1724,24 @@ def migrate_existing_data():
         raise
     finally:
         conn.close()
-def update_account(account_id: int, name: str, account_type: str, description: Optional[str] = None) -> bool:
+def update_account(account_id: int, name: str, account_type: str, description: Optional[str] = None, include_in_total: bool = True) -> bool:
     """Update account details."""
     conn = get_db_connection()
     try:
         conn.execute('''
             UPDATE accounts 
-            SET name = ?, type = ?, description = ?, last_updated = CURRENT_TIMESTAMP 
+            SET name = ?, type = ?, description = ?, include_in_total = ?, last_updated = CURRENT_TIMESTAMP 
             WHERE id = ?
-        ''', (name.strip(), account_type, description, account_id))
+        ''', (name.strip(), account_type, description, include_in_total, account_id))
         conn.commit()
-        
+
         if conn.total_changes > 0:
             logger.info(f"Account updated: ID {account_id}, Name: {name}")
             return True
         else:
             logger.warning(f"No account found with ID {account_id}")
             return False
-            
+
     except sqlite3.IntegrityError:
         logger.warning(f"Account name already exists: {name}")
         return False
@@ -1799,6 +1826,10 @@ def delete_account(account_id: int, force_delete: bool = False) -> Dict[str, Any
         conn.rollback()
         logger.error(f"Failed to delete account {account_id}: {e}")
         return {"success": False, "error": f"Database error: {str(e)}"}
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Unexpected error deleting account {account_id}: {e}", exc_info=True)
+        return {"success": False, "error": f"Unexpected error: {str(e)}"}
     finally:
         conn.close()
 
@@ -1937,7 +1968,7 @@ def migrate_ious_table():
         conn.close()
 def add_iou(creditor_name: str, debtor_name: str, amount: float, 
            description: str = "", due_date: Optional[str] = None, 
-           payment_identifier: Optional[str] = None) -> bool:
+           payment_identifier: Optional[str] = None) -> Optional[int]:
     """Add new IOU/pending transaction."""
     conn = get_db_connection()
     try:
@@ -1955,7 +1986,7 @@ def add_iou(creditor_name: str, debtor_name: str, amount: float,
     finally:
         conn.close()
 
-def get_ious(status: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_ious(status: Optional[str] = None, account_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """Get IOUs with optional status filtering and payment information."""
     conn = get_db_connection()
     try:
@@ -1969,6 +2000,9 @@ def get_ious(status: Optional[str] = None) -> List[Dict[str, Any]]:
         else:
             order_clause = "ORDER BY id DESC"
         
+        # Initialize params as an empty tuple
+        params: tuple = ()
+        
         # Modified logic to handle "pending" status properly
         if status == 'pending':
             # Include both 'pending' and 'partially_paid' IOUs as they're both still active
@@ -1976,10 +2010,21 @@ def get_ious(status: Optional[str] = None) -> List[Dict[str, Any]]:
             ious = conn.execute(query).fetchall()
         elif status:
             query = f'SELECT * FROM ious WHERE status = ? {order_clause}'
-            ious = conn.execute(query, (status,)).fetchall()
+            params = (status,)
         else:
             query = f'SELECT * FROM ious {order_clause}'
-            ious = conn.execute(query).fetchall()
+            params = ()
+            
+        # Add account_id filter if provided
+        if account_id:
+
+            if 'WHERE' in query:
+                query = query.replace('WHERE', f'WHERE account_id = ? AND')
+            else:
+                query += ' WHERE account_id = ?'
+            params += (account_id,)
+
+        ious = conn.execute(query, params).fetchall()
         
         # Add payment information to each IOU
         result: List[Dict[str, Any]] = []
@@ -2348,6 +2393,7 @@ def delete_iou(iou_id: int, confirmation_token: Optional[str] = None) -> Dict[st
         return {"success": False, "error": f"Unexpected error: {str(e)}"}
     finally:
         conn.close()
+
 def add_payment_identifier_column():
     """Add payment_identifier column to ious table for automatic matching."""
     conn = get_db_connection()
@@ -2549,7 +2595,7 @@ def _check_and_apply_iou_payment(description: str, amount: float, account_id: Op
         clean_description = description_lower.replace('[auto-categorized]', '').strip()
         
         # Get all active IOUs
-        active_ious = get_ious(status=['pending', 'partially_paid'])
+        active_ious = get_ious(status='pending')
         
         for iou in active_ious:
             debtor_name = iou['debtor_name'].lower()

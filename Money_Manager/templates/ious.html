@@ -14,6 +14,40 @@
     </div>
 </div>
 
+<div class="row mb-3">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body py-2">
+                <form method="GET" action="{{ url_for('ious') }}">
+                    <div class="input-group input-group-sm">
+                        <label class="input-group-text" for="account-filter">Filter by Account:</label>
+                        <select class="form-select" name="account_id" id="account-filter" onchange="this.form.submit()">
+                            <option value="">All Accounts</option>
+                            {% for account in accounts %}
+                            <option value="{{ account.id }}" {{ 'selected' if selected_account and selected_account.id == account.id else '' }}>
+                                {{ account.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% if selected_account %}
+                        <a href="{{ url_for('ious') }}" class="btn btn-outline-secondary btn-sm" title="Clear Filter">
+                            <i class="fas fa-times"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="row mb-3">
+    <div class="col-md-12">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            Use the "Me" keyword to represent yourself in IOUs.
+        </div>
+    </div>
+
 <!-- Summary Cards -->
 <div class="row mb-4">
     <div class="col-md-6">
