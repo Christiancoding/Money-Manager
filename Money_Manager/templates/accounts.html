@@ -93,20 +93,20 @@
                     </div>
                     <div class="col-md-3">
                         <h6 class="text-muted">Total Current Balance</h6>
-                        <h4 class="text-{{ 'success' if (accounts|sum(attribute='current_balance')) >= 0 else 'danger' }}">
-                            ${{ "%.2f"|format(accounts|sum(attribute='current_balance')) }}
+                        <h4 class="text-{{ 'success' if portfolio_summary.total_current_balance >= 0 else 'danger' }}">
+                            ${{ "%.2f"|format(portfolio_summary.total_current_balance) }}
                         </h4>
                     </div>
                     <div class="col-md-3">
                         <h6 class="text-muted">Total Calculated Balance</h6>
-                        <h4 class="text-{{ 'success' if (accounts|sum(attribute='calculated_balance')) >= 0 else 'danger' }}">
-                            ${{ "%.2f"|format(accounts|sum(attribute='calculated_balance')) }}
+                        <h4 class="text-{{ 'success' if portfolio_summary.total_calculated_balance >= 0 else 'danger' }}">
+                            ${{ "%.2f"|format(portfolio_summary.total_calculated_balance) }}
                         </h4>
                     </div>
                     <div class="col-md-3">
                         <h6 class="text-muted">Net Worth</h6>
-                        <h4 class="text-{{ 'success' if (accounts|sum(attribute='calculated_balance')) >= 0 else 'danger' }}">
-                            ${{ "%.2f"|format(accounts|sum(attribute='calculated_balance')) }}
+                        <h4 class="text-{{ 'success' if portfolio_summary.net_worth >= 0 else 'danger' }}">
+                            ${{ "%.2f"|format(portfolio_summary.net_worth) }}
                         </h4>
                     </div>
                 </div>
@@ -242,7 +242,7 @@ document.addEventListener('click', function(e) {
         return;
     }
     
-    // Handle edit button clicks
+// Handle edit button clicks
     if (e.target.closest('.edit-btn')) {
         const button = e.target.closest('.edit-btn');
         const accountId = button.getAttribute('data-account-id');
@@ -260,6 +260,7 @@ document.addEventListener('click', function(e) {
             document.getElementById('edit_name').value = data.name || '';
             document.getElementById('edit_type').value = data.type || '';
             document.getElementById('edit_description').value = data.description || '';
+            document.getElementById('edit_include_in_total').checked = data.include_in_total;
             
             // Set form action
             document.getElementById('editAccountForm').action = `/edit_account/${accountId}`;

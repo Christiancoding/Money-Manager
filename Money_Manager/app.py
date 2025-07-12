@@ -615,7 +615,7 @@ def charts():
         # Get data for charts with optional account filtering
         category_data = database.get_category_spending(30, account_id)
         daily_data = database.get_daily_balance(30, account_id)
-        monthly_data = database.get_monthly_balance_history(12)
+        monthly_data = database.get_monthly_balance_history(12, account_id)
         
         # Get accounts for filter dropdown
         accounts = database.get_accounts()
@@ -652,7 +652,18 @@ def accounts():
     try:
         accounts = database.get_account_summary()
         account_types = ['checking', 'savings', 'credit_card', 'investment', 'cash', 'other']
-        return render_template('accounts.html', accounts=accounts, account_types=account_types)
+        
+        # Calculate portfolio summary respecting 'include_in_total'
+        total_current_balance = sum(acc.get('current_balance', 0.0) for acc in accounts if acc.get('include_in_total'))
+        total_calculated_balance = sum(acc.get('calculated_balance', 0.0) for acc in accounts if acc.get('include_in_total'))
+        
+        portfolio_summary = {
+            'total_current_balance': total_current_balance,
+            'total_calculated_balance': total_calculated_balance,
+            'net_worth': total_calculated_balance  # Or current, depending on preference
+        }
+        
+        return render_template('accounts.html', accounts=accounts, account_types=account_types, portfolio_summary=portfolio_summary)
     except Exception as e:
         app.logger.error(f"Error loading accounts: {e}", exc_info=True)
         flash('Error loading accounts. Please try again.', 'error')
@@ -901,13 +912,14 @@ def add_iou():
         description = request.form.get('description', '').strip()
         due_date = request.form.get('due_date') or None
         payment_identifier = request.form.get('payment_identifier', '').strip()
+        account_id = request.form.get('account_id', type=int)
         
         if not creditor_name or not debtor_name or amount <= 0:
             flash('All fields are required and amount must be positive.', 'error')
             return redirect(url_for('ious'))
         
         # Create the IOU first
-        iou_id = database.add_iou(creditor_name, debtor_name, amount, description, due_date, payment_identifier)
+        iou_id = database.add_iou(creditor_name, debtor_name, amount, description, due_date, payment_identifier, account_id)
         
         if iou_id:
             success_message = f'IOU added: {debtor_name} owes {creditor_name} ${amount:.2f}'

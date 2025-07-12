@@ -1162,21 +1162,34 @@ def get_transaction_count(days: Optional[int] = None) -> int:
         return 0
     finally:
         conn.close()
-def get_monthly_balance_history(months: int = 12) -> List[Dict[str, Any]]:
+def get_monthly_balance_history(months: int = 12, account_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """Get monthly account balance progression for the last N months"""
     conn = get_db_connection()
     try:
-        # Calculate cumulative balance from ALL transactions, but only return recent months
-        query = '''
+        # Base query for all transactions
+        base_query = '''
         WITH all_monthly_data AS (
             SELECT 
                 strftime('%Y-%m', date) as month,
                 strftime('%Y-%m-01', date) as month_start,
                 SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END) as monthly_net
-            FROM transactions 
+            FROM transactions
+        '''
+        params = []
+        
+        if account_id:
+            base_query += ' WHERE account_id = ?'
+            params.append(account_id)
+            
+        base_query += '''
             GROUP BY strftime('%Y-%m', date)
             ORDER BY month
-        ),
+        )
+        '''
+        
+        # Calculate cumulative balance from ALL transactions, but only return recent months
+        query = base_query + '''
+        ,
         cumulative_balance AS (
             SELECT 
                 month,
@@ -1198,7 +1211,7 @@ def get_monthly_balance_history(months: int = 12) -> List[Dict[str, Any]]:
         SELECT * FROM recent_months
         '''.format(months)
         
-        results = conn.execute(query).fetchall()
+        results = conn.execute(query, params).fetchall()
         
         # Format for Chart.js
         monthly_data: List[Dict[str, Any]] = []
@@ -1848,7 +1861,9 @@ def create_ious_table():
                 status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'partially_paid', 'paid', 'cancelled')),
                 created_date DATE DEFAULT CURRENT_DATE,
                 settled_date DATE,
-                notes TEXT
+                notes TEXT,
+                account_id INTEGER,
+                FOREIGN KEY (account_id) REFERENCES accounts(id)
             )
         ''')
         conn.commit()
@@ -1968,15 +1983,15 @@ def migrate_ious_table():
         conn.close()
 def add_iou(creditor_name: str, debtor_name: str, amount: float, 
            description: str = "", due_date: Optional[str] = None, 
-           payment_identifier: Optional[str] = None) -> Optional[int]:
+           payment_identifier: Optional[str] = None, account_id: Optional[int] = None) -> Optional[int]:
     """Add new IOU/pending transaction."""
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO ious (creditor_name, debtor_name, amount, description, due_date, payment_identifier)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (creditor_name, debtor_name, amount, description, due_date, payment_identifier))
+            INSERT INTO ious (creditor_name, debtor_name, amount, description, due_date, payment_identifier, account_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (creditor_name, debtor_name, amount, description, due_date, payment_identifier, account_id))
         conn.commit()
         logger.info(f"IOU added: {creditor_name} owes {debtor_name} ${amount}")
         return cursor.lastrowid
@@ -2000,29 +2015,26 @@ def get_ious(status: Optional[str] = None, account_id: Optional[int] = None) -> 
         else:
             order_clause = "ORDER BY id DESC"
         
-        # Initialize params as an empty tuple
-        params: tuple = ()
+        base_query = 'SELECT * FROM ious'
+        conditions = []
+        params = []
         
         # Modified logic to handle "pending" status properly
         if status == 'pending':
-            # Include both 'pending' and 'partially_paid' IOUs as they're both still active
-            query = f"SELECT * FROM ious WHERE status IN ('pending', 'partially_paid') {order_clause}"
-            ious = conn.execute(query).fetchall()
+            conditions.append("status IN ('pending', 'partially_paid')")
         elif status:
-            query = f'SELECT * FROM ious WHERE status = ? {order_clause}'
-            params = (status,)
-        else:
-            query = f'SELECT * FROM ious {order_clause}'
-            params = ()
+            conditions.append('status = ?')
+            params.append(status)
             
         # Add account_id filter if provided
         if account_id:
-
-            if 'WHERE' in query:
-                query = query.replace('WHERE', f'WHERE account_id = ? AND')
-            else:
-                query += ' WHERE account_id = ?'
-            params += (account_id,)
+            conditions.append('account_id = ?')
+            params.append(account_id)
+        
+        if conditions:
+            base_query += ' WHERE ' + ' AND '.join(conditions)
+            
+        query = f'{base_query} {order_clause}'
 
         ious = conn.execute(query, params).fetchall()
         
