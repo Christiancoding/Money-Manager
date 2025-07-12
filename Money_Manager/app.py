@@ -143,7 +143,8 @@ def export_page():
 @app.route('/export/csv/transactions')
 def export_transactions_csv():
     days = request.args.get('days', type=int)
-    filename = database.export_transactions_csv(days=days)
+    account_id = request.args.get('account_id', type=int)
+    filename = database.export_transactions_csv(days=days, account_id=account_id)
     
     return send_file(filename, as_attachment=True, download_name=filename,
                      mimetype='text/csv')
@@ -325,11 +326,13 @@ def settings():
         current_balance = database.get_current_balance()
         calculated_balance = database.calculate_balance_from_transactions()
         custom_categories = database.get_custom_categories()
+        accounts = database.get_accounts()
         
         return render_template('settings.html',
                              current_balance=current_balance,
                              calculated_balance=calculated_balance,
-                             custom_categories=custom_categories)
+                             custom_categories=custom_categories,
+                             accounts=accounts)
     except Exception as e:
         app.logger.error(f"Error loading settings: {e}", exc_info=True)
         flash('Error loading settings. Please try again.', 'error')
@@ -459,6 +462,8 @@ def import_csv():
         # Get import options
         update_balance = request.form.get('update_balance') == 'on'
         import_mode = request.form.get('import_mode', 'append')  # Default to append mode
+        account_id = request.form.get('account_id', type=int)
+
         # Save file temporarily for processing
         filename = secure_filename(file.filename)
         
@@ -467,7 +472,7 @@ def import_csv():
                 file.save(tmp_file.name)
                 
                 # Process the CSV import
-                result = database.import_transactions_from_csv(tmp_file.name, update_balance, import_mode)
+                result = database.import_transactions_from_csv(tmp_file.name, update_balance, import_mode, account_id)
                 
                 if result['success']:
                     # Automatically fix balance issues after successful import
@@ -515,7 +520,6 @@ def import_csv():
         flash('An unexpected error occurred during import. Please try again.', 'error')
     
     return redirect(url_for('settings'))
-
 @app.route('/download_csv_template')
 def download_csv_template():
     """
@@ -917,45 +921,45 @@ def add_iou():
         due_date = request.form.get('due_date') or None
         payment_identifier = request.form.get('payment_identifier', '').strip()
         account_id = request.form.get('account_id', type=int)
-        
+
         if not creditor_name or not debtor_name or amount <= 0:
             flash('All fields are required and amount must be positive.', 'error')
             return redirect(url_for('ious'))
-        
+
         # Create the IOU first
         iou_id = database.add_iou(creditor_name, debtor_name, amount, description, due_date, payment_identifier, account_id)
-        
+
         if iou_id:
             success_message = f'IOU added: {debtor_name} owes {creditor_name} ${amount:.2f}'
-            
+
             # Attempt retroactive payment matching if payment identifier or names provided
             if payment_identifier or any(name.lower() != 'me' for name in [creditor_name, debtor_name]):
                 try:
                     match_result = database.retroactive_match_iou_payment(
                         iou_id, payment_identifier, creditor_name, debtor_name
                     )
-                    
+
                     if match_result["success"] and match_result["matched_transactions"]:
                         total_applied = match_result["total_applied"]
                         transaction_count = len(match_result["matched_transactions"])
-                        
+
                         if match_result["fully_paid"]:
                             success_message += f' - Automatically matched and fully paid with ${total_applied:.2f} from {transaction_count} existing transaction(s)!'
                         else:
                             remaining = match_result["remaining_balance"]
                             success_message += f' - Automatically applied ${total_applied:.2f} from {transaction_count} existing transaction(s). Remaining balance: ${remaining:.2f}'
-                        
+
                         app.logger.info(f"Retroactive matching applied ${total_applied:.2f} to new IOU {iou_id}")
-                    
+
                 except Exception as e:
                     app.logger.warning(f"Retroactive matching failed for IOU {iou_id}: {e}")
                     # Don't fail the whole operation if matching fails
                     success_message += ' (Note: Automatic payment matching unavailable)'
-            
+
             flash(success_message, 'success')
         else:
             flash('Error adding IOU. Please try again.', 'error')
-            
+
     except ValueError:
         flash('Please enter a valid amount.', 'error')
     except Exception as e:
@@ -974,20 +978,20 @@ def settle_iou_payment(iou_id: int):
         create_transaction = request.form.get('create_transaction') == 'on'
         account_id_str = request.form.get('account_id')
         account_id = int(account_id_str) if account_id_str else None
-        
+
         if payment_amount <= 0:
             flash('Payment amount must be positive.', 'error')
             return redirect(url_for('ious'))
-        
+
         # Verify payment amount doesn't exceed remaining balance
         remaining_balance = database.get_iou_remaining_balance(iou_id)
         if payment_amount > remaining_balance + 0.01:  # Allow small rounding differences
             flash(f'Payment amount (${payment_amount:.2f}) exceeds remaining balance (${remaining_balance:.2f}).', 'error')
             return redirect(url_for('ious'))
-        
+
         # Add the payment
         success = database.add_iou_payment(iou_id, payment_amount, payment_method, payment_notes, account_id)
-        
+
         if success:
             # Check if IOU is now fully paid
             new_remaining = database.get_iou_remaining_balance(iou_id)
@@ -995,13 +999,13 @@ def settle_iou_payment(iou_id: int):
                 flash(f'IOU fully paid with ${payment_amount:.2f} payment!', 'success')
             else:
                 flash(f'Payment of ${payment_amount:.2f} recorded. Remaining balance: ${new_remaining:.2f}', 'success')
-            
+
             # Create transaction if requested
             if create_transaction and account_id:
                 # Get IOU details for transaction description
                 ious = database.get_ious()
                 iou = next((i for i in ious if i['id'] == iou_id), None)
-                
+
                 if iou:
                     # Determine transaction type
                     if iou['creditor_name'].lower() == 'me':
@@ -1016,7 +1020,7 @@ def settle_iou_payment(iou_id: int):
                         transaction_type = 'income'
                         description = f"IOU payment: {iou['creditor_name']} received from {iou['debtor_name']}"
                         category = 'Debt Settlement'
-                    
+
                     database.add_transaction(
                         payment_amount, category, transaction_type, description,
                         datetime.now().strftime('%Y-%m-%d'), account_id
@@ -1024,13 +1028,13 @@ def settle_iou_payment(iou_id: int):
                     flash('Transaction record created.', 'info')
         else:
             flash('Error processing payment. Please try again.', 'error')
-            
+
     except ValueError:
         flash('Please enter a valid payment amount.', 'error')
     except Exception as e:
         app.logger.error(f"Error processing IOU payment: {e}", exc_info=True)
         flash('Error processing payment. Please try again.', 'error')
-    
+
     return redirect(url_for('ious'))
 @app.route('/iou_payments/<int:iou_id>')
 def get_iou_payments(iou_id: int):
@@ -1072,6 +1076,27 @@ def debug_accounts():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+@app.route('/cancel_iou_payment/<int:payment_id>', methods=['POST'])
+def cancel_iou_payment(payment_id: int):
+    """Cancel an IOU payment."""
+    try:
+        reason = request.form.get('reason', 'Cancelled by user.')
+        if not reason:
+            flash('A reason is required to cancel a payment.', 'error')
+            return redirect(url_for('ious'))
+
+        success = database.cancel_iou_payment(payment_id, reason)
+
+        if success:
+            flash('Payment cancelled successfully!', 'success')
+        else:
+            flash('Error cancelling payment. Please try again.', 'error')
+
+    except Exception as e:
+        app.logger.error(f"Error cancelling payment {payment_id}: {e}", exc_info=True)
+        flash('An unexpected error occurred.', 'error')
+
+    return redirect(url_for('ious'))
 @app.route('/fix/recalculate_balance', methods=['POST'])
 def fix_recalculate_balance():
     """Recalculate account balance from all transactions"""

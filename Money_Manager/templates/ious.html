@@ -287,7 +287,7 @@
                     </div>
                     <div class="mb-3">
                         <label for="payment_identifier" class="form-label">Payment Identifier (Optional)</label>
-                        <input type="text" class="form-control" id="payment_identifier" name="payment_identifier" 
+                        <input type="text" class="form-control" id="payment_identifier" name="payment_identifier"
                             placeholder="e.g., AMAZON.COM" maxlength="50">
                         <div class="form-text">Unique identifier for automatic payment matching</div>
                     </div>
@@ -574,51 +574,86 @@ function showPaymentHistory(payments) {
     historyHtml += '<div class="modal-header"><h5 class="modal-title">Payment History</h5>';
     historyHtml += '<button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>';
     historyHtml += '<div class="modal-body">';
-    
+
     if (payments.length > 0) {
         historyHtml += '<div class="table-responsive"><table class="table table-sm">';
-        historyHtml += '<thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Notes</th><th>Actions</th></tr></thead><tbody>';
-        
+        historyHtml += '<thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Notes</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+
         payments.forEach(payment => {
-            historyHtml += `<tr>
+            const isCancelled = payment.status === 'cancelled';
+            const rowClass = isCancelled ? 'text-muted text-decoration-line-through' : '';
+            historyHtml += `<tr class="${rowClass}">
                 <td>${payment.payment_date}</td>
                 <td>$${parseFloat(payment.payment_amount).toFixed(2)}</td>
                 <td>${payment.payment_method || '-'}</td>
                 <td>${payment.notes || '-'}</td>
-                <td>
-                    <button class="btn btn-sm btn-outline-primary edit-payment-btn" 
+                <td><span class="badge bg-${isCancelled ? 'secondary' : 'success'}">${payment.status}</span></td>
+                <td>`;
+            if (!isCancelled) {
+                historyHtml += `<button class="btn btn-sm btn-outline-primary edit-payment-btn" 
                             data-payment-id="${payment.id}"
                             data-payment-method="${payment.payment_method || ''}"
                             data-payment-notes="${payment.notes || ''}"
                             title="Edit Payment Details">
                         <i class="fas fa-edit"></i>
                     </button>
-                </td>
+                    <button class="btn btn-sm btn-outline-danger cancel-payment-btn"
+                            data-payment-id="${payment.id}"
+                            title="Cancel Payment">
+                        <i class="fas fa-times"></i>
+                    </button>`;
+            } else {
+                 historyHtml += `<small>Reason: ${payment.cancellation_reason || 'No reason given'}</small>`
+            }
+            historyHtml += `</td>
             </tr>`;
         });
-        
+
         historyHtml += '</tbody></table></div>';
     } else {
         historyHtml += '<p class="text-muted">No payments recorded yet.</p>';
     }
-    
+
     historyHtml += '</div><div class="modal-footer">';
     historyHtml += '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>';
     historyHtml += '</div></div></div></div>';
-    
+
     // Remove existing modal if present
     const existingModal = document.getElementById('paymentHistoryModal');
     if (existingModal) {
         existingModal.remove();
     }
-    
+
     // Add new modal to page
     document.body.insertAdjacentHTML('beforeend', historyHtml);
-    
+
     // Show modal
     const modal = new bootstrap.Modal(document.getElementById('paymentHistoryModal'));
     modal.show();
 }
+// Handle cancel payment button clicks
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.cancel-payment-btn')) {
+        const button = e.target.closest('.cancel-payment-btn');
+        const paymentId = button.getAttribute('data-payment-id');
+        const reason = prompt("Please enter a reason for cancelling this payment:");
+        if (reason) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/cancel_iou_payment/${paymentId}`;
+            form.style.display = 'none';
+
+            const reasonInput = document.createElement('input');
+            reasonInput.type = 'hidden';
+            reasonInput.name = 'reason';
+            reasonInput.value = reason;
+            form.appendChild(reasonInput);
+
+            document.body.appendChild(form);
+            form.submit();
+        }
+    }
+});
 // Handle quick payment buttons
 document.addEventListener('click', function(e) {
     if (e.target.closest('.quick-pay-btn')) {

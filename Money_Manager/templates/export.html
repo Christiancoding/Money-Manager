@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-
+{% set accounts = accounts or [] %}
 {% block title %}Export & Backup - Money Manager{% endblock %}
 
 {% block content %}
@@ -13,6 +13,20 @@
             </div>
             <div class="card-body">
                 <h6>Export Transactions (CSV)</h6>
+                <p class="text-muted">Download your transaction data as a CSV file.</p>
+                <form id="export-form" action="{{ url_for('export_transactions_csv') }}" method="GET">
+                    <div class="input-group mb-3">
+                        <select class="form-select" name="account_id">
+                            <option value="">All Accounts</option>
+                            {% for account in accounts %}
+                            <option value="{{ account.id }}">{{ account.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button class="btn btn-outline-primary" type="submit">
+                            <i class="fas fa-file-csv me-2"></i>Export
+                        </button>
+                    </div>
+                </form>
                 <p class="text-muted">Download your transaction data as a CSV file.</p>
                 <div class="btn-group-vertical d-grid gap-2 mb-3">
                     <a href="{{ url_for('export_transactions_csv') }}" class="btn btn-outline-primary">

@@ -354,21 +354,21 @@ def delete_transaction(transaction_id: int):
             conn.close()
         logger.error(f"Unexpected error deleting transaction {transaction_id}: {e}")
         raise
-def export_transactions_csv(filename: Optional[str] = None, days: Optional[int] = None) -> str:
-    """Export transactions to CSV"""
+def export_transactions_csv(filename: Optional[str] = None, days: Optional[int] = None, account_id: Optional[int] = None) -> str:
+    """Export transactions to CSV with account filtering"""
     if not filename:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"transactions_{timestamp}.csv"
-    
-    transactions = get_transactions_with_category(days)
-    # Convert sqlite3.Row objects to dictionaries for CSV export
+        account_str = f"_account_{account_id}" if account_id else ""
+        filename = f"transactions{account_str}_{timestamp}.csv"
+
+    transactions = get_transactions_with_category(days=days, account_id=account_id)
     transactions = [dict(trans) for trans in transactions]
-    
+
     try:
         with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['date', 'type', 'category', 'description', 'amount']
+            fieldnames = ['date', 'type', 'category', 'description', 'amount', 'account_name']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            
+
             writer.writeheader()
             for trans in transactions:
                 writer.writerow({
@@ -376,7 +376,8 @@ def export_transactions_csv(filename: Optional[str] = None, days: Optional[int] 
                     'type': trans['type'],
                     'category': trans['category'],
                     'description': trans['description'] or '',
-                    'amount': trans['amount']
+                    'amount': trans['amount'],
+                    'account_name': trans.get('account_name', 'N/A')
                 })
         return filename
     except Exception as e:
@@ -695,7 +696,7 @@ def _classify_by_amount_sign(amount: float, description: str = "") -> tuple[str,
         return 'income', 'high'
     else:
         return 'expense', 'high'
-def import_transactions_from_csv(csv_file_path: str, update_balance: bool = True, import_mode: str = 'append') -> Dict[str, Any]:
+def import_transactions_from_csv(csv_file_path: str, update_balance: bool = True, import_mode: str = 'append', account_id: Optional[int] = None) -> Dict[str, Any]:
     """
     Import transactions from CSV with comprehensive validation and error handling.
     
@@ -710,7 +711,10 @@ def import_transactions_from_csv(csv_file_path: str, update_balance: bool = True
     if import_mode == 'replace':
         try:
             logger.info("Replace mode selected - clearing existing transactions")
-            conn.execute("DELETE FROM transactions")
+            if account_id:
+                 conn.execute("DELETE FROM transactions WHERE account_id = ?",(account_id,))
+            else:
+                 conn.execute("DELETE FROM transactions")
             conn.execute("DELETE FROM categories WHERE id > 8")  # Keep default categories
             conn.commit()
             logger.info("Existing transactions cleared successfully")
@@ -878,9 +882,9 @@ def import_transactions_from_csv(csv_file_path: str, update_balance: bool = True
 
                     # Use date as created_at to ensure proper sorting regardless of import order
                     conn.execute('''
-                        INSERT INTO transactions (date, type, amount, category, description, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        ''', (parsed_date, final_type, normalized_amount, category, full_description, parsed_date))
+                        INSERT INTO transactions (date, type, amount, category, description, created_at, account_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ''', (parsed_date, final_type, normalized_amount, category, full_description, parsed_date, account_id))
                     # Check for IOU matching during import
                     try:
                         if final_type == 'expense' and full_description:
@@ -1772,6 +1776,7 @@ def create_ious_table():
                 settled_date DATE,
                 notes TEXT,
                 account_id INTEGER,
+                payment_identifier TEXT,
                 FOREIGN KEY (account_id) REFERENCES accounts(id)
             )
         ''')
@@ -1797,15 +1802,42 @@ def create_iou_payments_table():
                 notes TEXT,
                 account_id INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'active' CHECK(status IN ('active', 'cancelled')),
+                cancellation_reason TEXT,
                 FOREIGN KEY (iou_id) REFERENCES ious(id),
                 FOREIGN KEY (account_id) REFERENCES accounts(id)
             )
         ''')
+        # Migration for existing tables
+        columns = conn.execute("PRAGMA table_info(iou_payments)").fetchall()
+        column_names = [col[1] for col in columns]
+        if 'status' not in column_names:
+            conn.execute("ALTER TABLE iou_payments ADD COLUMN status TEXT DEFAULT 'active' CHECK(status IN ('active', 'cancelled'))")
+        if 'cancellation_reason' not in column_names:
+            conn.execute("ALTER TABLE iou_payments ADD COLUMN cancellation_reason TEXT")
+
         conn.commit()
-        logger.info("IOU payments table created successfully")
+        logger.info("IOU payments table created/updated successfully")
     except sqlite3.Error as e:
         logger.error(f"Failed to create IOU payments table: {e}")
         raise
+    finally:
+        conn.close()
+def cancel_iou_payment(payment_id: int, reason: str) -> bool:
+    """Mark an IOU payment as cancelled with a reason."""
+    conn = get_db_connection()
+    try:
+        conn.execute('''
+            UPDATE iou_payments
+            SET status = 'cancelled', cancellation_reason = ?
+            WHERE id = ?
+        ''', (reason, payment_id))
+        conn.commit()
+        logger.info(f"Cancelled IOU payment {payment_id} with reason: {reason}")
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Failed to cancel IOU payment {payment_id}: {e}")
+        return False
     finally:
         conn.close()
 def migrate_ious_table():
@@ -1835,7 +1867,10 @@ def migrate_ious_table():
                     status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'partially_paid', 'paid', 'cancelled')),
                     created_date DATE DEFAULT CURRENT_DATE,
                     settled_date DATE,
-                    notes TEXT
+                    notes TEXT,
+                    account_id INTEGER,
+                    payment_identifier TEXT,
+                    FOREIGN KEY (account_id) REFERENCES accounts(id)
                 )
             ''')
             
@@ -1862,7 +1897,10 @@ def migrate_ious_table():
                     status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'partially_paid', 'paid', 'cancelled')),
                     created_date DATE DEFAULT CURRENT_DATE,
                     settled_date DATE,
-                    notes TEXT
+                    notes TEXT,
+                    account_id INTEGER,
+                    payment_identifier TEXT,
+                    FOREIGN KEY (account_id) REFERENCES accounts(id)
                 )
             ''')
         else:
@@ -1878,9 +1916,15 @@ def migrate_ious_table():
             if 'notes' not in column_names:
                 logger.info("Adding notes column to ious table")
                 conn.execute('ALTER TABLE ious ADD COLUMN notes TEXT')
+                
             if 'payment_identifier' not in column_names:
                 logger.info("Adding payment_identifier column to ious table")
-                conn.execute('ALTER TABLE ious ADD COLUMN payment_identifier TEXT') 
+                conn.execute('ALTER TABLE ious ADD COLUMN payment_identifier TEXT')
+                
+            if 'account_id' not in column_names:
+                logger.info("Adding account_id column to ious table")
+                conn.execute('ALTER TABLE ious ADD COLUMN account_id INTEGER REFERENCES accounts(id)')
+        
         conn.commit()
         logger.info("IOUs table migration completed successfully")
         
@@ -2187,28 +2231,28 @@ def get_iou_payments(iou_id: int) -> List[Dict[str, Any]]:
         conn.close()
 
 def get_iou_remaining_balance(iou_id: int) -> float:
-    """Calculate remaining balance for an IOU."""
+    """Calculate remaining balance for an IOU, excluding cancelled payments."""
     conn = get_db_connection()
     try:
         # Get original IOU amount
         iou = conn.execute('SELECT amount FROM ious WHERE id = ?', (iou_id,)).fetchone()
         if not iou:
             return 0.0
-        
+
         original_amount = float(iou[0])
-        
-        # Get total payments
+
+        # Get total of active payments
         payments_result = conn.execute('''
             SELECT COALESCE(SUM(payment_amount), 0) as total_paid
-            FROM iou_payments 
-            WHERE iou_id = ?
+            FROM iou_payments
+            WHERE iou_id = ? AND status = 'active'
         ''', (iou_id,)).fetchone()
-        
+
         total_paid = float(payments_result[0]) if payments_result else 0.0
         remaining = original_amount - total_paid
-        
+
         return max(0.0, remaining)  # Ensure non-negative
-        
+
     except sqlite3.Error as e:
         logger.error(f"Failed to calculate remaining balance: {e}")
         return 0.0
