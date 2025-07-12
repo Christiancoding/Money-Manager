@@ -82,103 +82,12 @@ def init_database():
         ('Entertainment', 'expense', '#6f42c1'),
         ('Utilities', 'expense', '#6c757d'),
     ]
-    def create_custom_categories_table():
-        """Initialize custom categories table with comprehensive structure."""
-        conn = get_db_connection()
-        try:
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS custom_categories (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE,
-                    type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-                    description TEXT,
-                    created_date DATE DEFAULT CURRENT_DATE,
-                    is_active BOOLEAN DEFAULT 1
-                )
-            ''')
-            conn.commit()
-            logger.info("Custom categories table initialized successfully")
-        except sqlite3.Error as e:
-            logger.error(f"Failed to create custom categories table: {e}")
-            raise
-        finally:
-            conn.close()
-    def create_account_balance_table():
-        """Initialize account balance tracking with audit trail."""
-        conn = get_db_connection()
-        try:
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS account_balance (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    balance DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
-                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_by TEXT DEFAULT 'system'
-                )
-            ''')
-            
-            # Initialize with zero balance if table is empty
-            existing = conn.execute('SELECT COUNT(*) FROM account_balance').fetchone()[0]
-            if existing == 0:
-                conn.execute(
-                    'INSERT INTO account_balance (balance, updated_by) VALUES (0.00, ?)',
-                    ('initial_setup',)
-                )
-                
-            conn.commit()
-            logger.info("Account balance table initialized successfully")
-        except sqlite3.Error as e:
-            logger.error(f"Failed to create account balance table: {e}")
-            raise
-        finally:
-            conn.close()
-    def create_transactions_table():
-        """Create transactions table with comprehensive structure."""
-        conn = get_db_connection()
-        try:
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS transactions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    amount REAL NOT NULL,
-                    category TEXT NOT NULL,
-                    type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
-                    description TEXT,
-                    date DATE NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            conn.commit()
-            logger.info("Transactions table initialized successfully")
-        except sqlite3.Error as e:
-            logger.error(f"Failed to create transactions table: {e}")
-            raise
-        finally:
-            conn.close()
-    def create_categories_table():
-        """Create categories table with comprehensive structure."""
-        conn = get_db_connection()
-        try:
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS categories (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE,
-                    type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
-                    color TEXT DEFAULT '#007bff'
-                )
-            ''')
-            conn.commit()
-            logger.info("Categories table initialized successfully")
-        except sqlite3.Error as e:
-            logger.error(f"Failed to create categories table: {e}")
-            raise
-        finally:
-            conn.close()
-    # Then initialize other tables
+    
+    # Call standalone functions instead of redefining them
     create_custom_categories_table()
     create_account_balance_table()
     create_ious_table()
     create_iou_payments_table()
-    create_transactions_table()
-    create_categories_table()
     migrate_ious_table()
     migrate_existing_data()
     

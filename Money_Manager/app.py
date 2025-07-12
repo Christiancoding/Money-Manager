@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from datetime import datetime
 import database
 import os
+import socket
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -16,8 +17,11 @@ app.static_url_path = '/static'
 # Initialize database on startup
 database.init_database()
 # Verify database tables
-if not database.verify_iou_tables():
-    app.logger.error("IOU tables missing - please run database migration")
+try:
+    # Try to access IOU tables through an existing function
+    database.get_ious('pending')
+except Exception as e:
+    app.logger.error(f"IOU tables missing or inaccessible - please run database migration: {e}")
 
 @app.route('/')
 def index():
@@ -1468,5 +1472,30 @@ def process_automatic_payment_route():
     except Exception as e:
         app.logger.error(f"Error processing automatic payment: {e}", exc_info=True)
         return jsonify({"success": False, "error": "Internal server error"}), 500
+def find_available_port(start_port=5000, max_tries=100):
+    """Finds an available port by checking sequentially from a start port."""
+    for port in range(start_port, start_port + max_tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(('127.0.0.1', port))
+                # Set socket to TIME_WAIT state to allow immediate reuse
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                return port
+            except (OSError, socket.error) as e:
+                app.logger.debug(f"Port {port} is in use, trying next... ({e})")
+                continue
+    raise RuntimeError(f"No free ports found in range {start_port}-{start_port + max_tries - 1}")
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    try:
+        # Configure basic logging before app starts
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        
+        start_port = int(os.environ.get('PORT', 5000))
+        port = find_available_port(start_port)
+        app.run(debug=True, host='127.0.0.1', port=port)
+    except (RuntimeError, ValueError, OSError) as e:
+        print(f"Error starting server: {e}")
+        import sys
+        sys.exit(1)
