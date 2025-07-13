@@ -124,7 +124,7 @@ def add_transaction(amount: float, category: str, trans_type: str, description: 
         # Check for IOU matching and auto-apply payments
         try:
             if trans_type == 'expense' and description:
-                _check_and_apply_iou_payment(description, amount, account_id)
+                _check_and_apply_iou_payment(description, amount, account_id, conn)
         except Exception as e:
             logger.warning(f"IOU auto-matching failed: {e}")
         conn.close()
@@ -147,6 +147,55 @@ def add_transaction(amount: float, category: str, trans_type: str, description: 
             conn.rollback()
             conn.close()
         logger.error(f"Unexpected error adding transaction: {e}")
+        raise
+        
+def delete_transaction(transaction_id: int):
+    """
+    Delete a transaction and automatically update account balance.
+    
+    Args:
+        transaction_id: ID of transaction to delete
+    """
+    conn = get_db_connection()
+    try:
+        # Get account_id before deleting the transaction
+        transaction = conn.execute(
+            'SELECT account_id, amount, type FROM transactions WHERE id = ?', 
+            (transaction_id,)
+        ).fetchone()
+        
+        if not transaction:
+            logger.warning(f"Transaction {transaction_id} not found for deletion")
+            conn.close()
+            return
+        
+        account_id = transaction[0] or 1  # Default to account 1 if None
+        amount = transaction[1]
+        trans_type = transaction[2]
+        
+        # Delete the transaction
+        conn.execute('DELETE FROM transactions WHERE id = ?', (transaction_id,))
+        conn.commit()
+        conn.close()
+        
+        # Automatically update account balance
+        balance_updated = _auto_update_account_balance(account_id)
+        
+        if balance_updated:
+            logger.info(f"Transaction {transaction_id} deleted and account {account_id} balance auto-updated: {trans_type} ${amount:.2f}")
+        else:
+            logger.warning(f"Transaction {transaction_id} deleted but failed to auto-update account {account_id} balance")
+            
+    except sqlite3.Error as e:
+        conn.rollback()
+        conn.close()
+        logger.error(f"Failed to delete transaction {transaction_id}: {e}")
+        raise
+    except Exception as e:
+        if 'conn' in locals():
+            conn.rollback()
+            conn.close()
+        logger.error(f"Unexpected error deleting transaction {transaction_id}: {e}")
         raise
 
 def get_transactions_with_category(days: Optional[int] = None, limit: Optional[int] = None, offset: int = 0, account_id: Optional[int] = None, category: Optional[str] = None) -> List[sqlite3.Row]:
@@ -305,55 +354,6 @@ def get_daily_balance_basic(days: int = 30) -> List[Dict[str, float]]:
     # Convert Row objects to dictionaries for JSON serialization
     return [{'date': row['date'], 'income': float(row['income']), 'expense': float(row['expense'])} 
             for row in results]
-
-def delete_transaction(transaction_id: int):
-    """
-    Delete a transaction and automatically update account balance.
-    
-    Args:
-        transaction_id: ID of transaction to delete
-    """
-    conn = get_db_connection()
-    try:
-        # Get account_id before deleting the transaction
-        transaction = conn.execute(
-            'SELECT account_id, amount, type FROM transactions WHERE id = ?', 
-            (transaction_id,)
-        ).fetchone()
-        
-        if not transaction:
-            logger.warning(f"Transaction {transaction_id} not found for deletion")
-            conn.close()
-            return
-        
-        account_id = transaction[0] or 1  # Default to account 1 if None
-        amount = transaction[1]
-        trans_type = transaction[2]
-        
-        # Delete the transaction
-        conn.execute('DELETE FROM transactions WHERE id = ?', (transaction_id,))
-        conn.commit()
-        conn.close()
-        
-        # Automatically update account balance
-        balance_updated = _auto_update_account_balance(account_id)
-        
-        if balance_updated:
-            logger.info(f"Transaction {transaction_id} deleted and account {account_id} balance auto-updated: {trans_type} ${amount:.2f}")
-        else:
-            logger.warning(f"Transaction {transaction_id} deleted but failed to auto-update account {account_id} balance")
-            
-    except sqlite3.Error as e:
-        conn.rollback()
-        conn.close()
-        logger.error(f"Failed to delete transaction {transaction_id}: {e}")
-        raise
-    except Exception as e:
-        if 'conn' in locals():
-            conn.rollback()
-            conn.close()
-        logger.error(f"Unexpected error deleting transaction {transaction_id}: {e}")
-        raise
 def export_transactions_csv(filename: Optional[str] = None, days: Optional[int] = None, account_id: Optional[int] = None) -> str:
     """Export transactions to CSV with account filtering"""
     if not filename:
@@ -888,7 +888,7 @@ def import_transactions_from_csv(csv_file_path: str, update_balance: bool = True
                     # Check for IOU matching during import
                     try:
                         if final_type == 'expense' and full_description:
-                            _check_and_apply_iou_payment(full_description, normalized_amount, 1)  # Default account
+                            _check_and_apply_iou_payment(full_description, normalized_amount, 1, conn=conn)  # Default account
                     except Exception as e:
                         logger.warning(f"IOU auto-matching failed during import: {e}")
                     logger.info(f"Inserted row {row_num}: {parsed_date}, {final_type}, {normalized_amount}, {category}")
@@ -2152,9 +2152,13 @@ def get_unique_categories() -> List[str]:
     finally:
         conn.close()
 def add_iou_payment(iou_id: int, payment_amount: float, payment_method: Optional[str] = None, 
-                   notes: Optional[str] = None, account_id: Optional[int] = None) -> bool:
+                   notes: Optional[str] = None, account_id: Optional[int] = None, conn: Optional[sqlite3.Connection] = None) -> bool:
     """Add a partial payment to an IOU."""
-    conn = get_db_connection()
+    close_conn = False
+    if conn is None:
+        conn = get_db_connection()
+        close_conn = True
+
     try:
         # Verify IOU exists and is not already fully paid
         iou = conn.execute('SELECT * FROM ious WHERE id = ? AND status != ?', (iou_id, 'paid')).fetchone()
@@ -2163,7 +2167,7 @@ def add_iou_payment(iou_id: int, payment_amount: float, payment_method: Optional
             return False
         
         # Check if payment amount is valid
-        remaining_balance = get_iou_remaining_balance(iou_id)
+        remaining_balance = get_iou_remaining_balance(iou_id, conn=conn)
         if payment_amount <= 0 or payment_amount > remaining_balance:
             logger.warning(f"Invalid payment amount: ${payment_amount:.2f} (remaining: ${remaining_balance:.2f})")
             return False
@@ -2202,15 +2206,18 @@ def add_iou_payment(iou_id: int, payment_amount: float, payment_method: Optional
             ''', (iou_id,))
             logger.info(f"Partial payment of ${payment_amount:.2f} added to IOU {iou_id}")
         
-        conn.commit()
+        if close_conn:
+            conn.commit()
         return True
         
     except sqlite3.Error as e:
-        conn.rollback()
+        if close_conn:
+            conn.rollback()
         logger.error(f"Failed to add IOU payment: {e}")
         return False
     finally:
-        conn.close()
+        if close_conn:
+            conn.close()
 
 def get_iou_payments(iou_id: int) -> List[Dict[str, Any]]:
     """Get all payments for a specific IOU."""
@@ -2230,9 +2237,13 @@ def get_iou_payments(iou_id: int) -> List[Dict[str, Any]]:
     finally:
         conn.close()
 
-def get_iou_remaining_balance(iou_id: int) -> float:
+def get_iou_remaining_balance(iou_id: int, conn: Optional[sqlite3.Connection] = None) -> float:
     """Calculate remaining balance for an IOU, excluding cancelled payments."""
-    conn = get_db_connection()
+    close_conn = False
+    if conn is None:
+        conn = get_db_connection()
+        close_conn = True
+
     try:
         # Get original IOU amount
         iou = conn.execute('SELECT amount FROM ious WHERE id = ?', (iou_id,)).fetchone()
@@ -2257,7 +2268,8 @@ def get_iou_remaining_balance(iou_id: int) -> float:
         logger.error(f"Failed to calculate remaining balance: {e}")
         return 0.0
     finally:
-        conn.close()
+        if close_conn:
+            conn.close()
 def get_overdue_ious() -> List[Dict[str, Any]]:
     """Get IOUs that are past their due date."""
     conn = get_db_connection()
@@ -2540,7 +2552,7 @@ def initialize_database():
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
         raise
-def _check_and_apply_iou_payment(description: str, amount: float, account_id: Optional[int]) -> None:
+def _check_and_apply_iou_payment(description: str, amount: float, account_id: Optional[int], conn: sqlite3.Connection) -> None:
     """
     Check if a transaction description matches an existing IOU and auto-apply payment.
     
@@ -2548,6 +2560,7 @@ def _check_and_apply_iou_payment(description: str, amount: float, account_id: Op
         description: Transaction description to match against IOU debtors/creditors
         amount: Payment amount
         account_id: Account where payment occurred
+        conn: The existing database connection to use
     
     Returns:
         None
@@ -2560,8 +2573,9 @@ def _check_and_apply_iou_payment(description: str, amount: float, account_id: Op
         clean_description = description_lower.replace('[auto-categorized]', '').strip()
         
         # Get all active IOUs
-        active_ious = get_ious(status='pending')
-        
+        active_ious_rows = conn.execute("SELECT * FROM ious WHERE status IN ('pending', 'partially_paid')").fetchall()
+        active_ious = [dict(row) for row in active_ious_rows]
+
         for iou in active_ious:
             debtor_name = iou['debtor_name'].lower()
             creditor_name = iou['creditor_name'].lower()
@@ -2578,7 +2592,7 @@ def _check_and_apply_iou_payment(description: str, amount: float, account_id: Op
                 matched_person = iou['creditor_name']
             
             if name_match:
-                remaining_balance = get_iou_remaining_balance(iou['id'])
+                remaining_balance = get_iou_remaining_balance(iou['id'], conn=conn)
                 if amount <= remaining_balance + 0.01:  # Allow small rounding differences
                     
                     # Apply the payment
@@ -2588,7 +2602,8 @@ def _check_and_apply_iou_payment(description: str, amount: float, account_id: Op
                         amount, 
                         "Auto-matched", 
                         payment_notes, 
-                        account_id
+                        account_id,
+                        conn=conn
                     )
                     
                     if success:
@@ -2625,6 +2640,7 @@ def retroactive_match_iou_payment(iou_id: int, payment_identifier: Optional[str]
             return {"success": False, "error": "IOU not found"}
         
         iou_amount = float(iou['amount'])
+        iou_account_id = iou['account_id']
         remaining_balance = get_iou_remaining_balance(iou_id)
         
         # Search criteria in order of preference
@@ -2633,8 +2649,8 @@ def retroactive_match_iou_payment(iou_id: int, payment_identifier: Optional[str]
         # 1. Payment identifier match (most specific)
         if payment_identifier:
             search_queries.append({
-                "query": "SELECT * FROM transactions WHERE description LIKE ? ORDER BY date DESC",
-                "params": (f'%{payment_identifier}%',),
+                "query": "SELECT * FROM transactions WHERE description LIKE ? AND account_id = ? ORDER BY date DESC",
+                "params": (f'%{payment_identifier}%', iou_account_id),
                 "match_type": "payment_identifier"
             })
         
@@ -2643,8 +2659,8 @@ def retroactive_match_iou_payment(iou_id: int, payment_identifier: Optional[str]
         for name in names_to_search:
             if name.lower() != 'me':  # Skip 'me' entries
                 search_queries.append({
-                    "query": "SELECT * FROM transactions WHERE description LIKE ? ORDER BY date DESC",
-                    "params": (f'%{name}%',),
+                    "query": "SELECT * FROM transactions WHERE description LIKE ? AND account_id = ? ORDER BY date DESC",
+                    "params": (f'%{name}%', iou_account_id),
                     "match_type": f"name_match_{name}"
                 })
         

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ error_title or "Error" }} - Money Manager</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-8 offset-md-2">
+                <div class="card">
+                    <div class="card-header bg-danger text-white">
+                        <h4>{{ error_title or "Error" }}</h4>
+                    </div>
+                    <div class="card-body">
+                        <p>{{ error_message }}</p>
+                        
+                        {% if 'unexpected char' in error_message and "\\'" in error_message %}
+                        <div class="alert alert-info">
+                            <h5>Template Fix Recommendation</h5>
+                            <p>This appears to be an issue with escaped quotes in a JavaScript string that contains a Jinja template.</p>
+                            <p>Try changing:</p>
+                            <pre><code>form[action="{{ "{{ url_for(\\'import_csv\\') }}" }}"]</code></pre>
+                            <p>To one of these alternatives:</p>
+                            <pre><code>form[action="{{ "{{ url_for('import_csv') }}" }}"]</code></pre>
+                            <p>Or:</p>
+                            <pre><code>form[action="{{ "{{ url_for(\"import_csv\") }}" }}"]</code></pre>
+                        </div>
+                        {% endif %}
+                        
+                        <a href="{{ url_for('index') }}" class="btn btn-primary">Return to Dashboard</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

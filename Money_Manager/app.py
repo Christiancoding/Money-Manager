@@ -8,6 +8,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from io import BytesIO
+import jinja2
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-this'
@@ -136,9 +137,32 @@ def delete_transaction(transaction_id: int):
 def utility_processor():
     """Make datetime available in templates"""
     return dict(moment=datetime)
+
+# Add template error handler
+@app.errorhandler(jinja2.exceptions.TemplateSyntaxError)
+def template_syntax_error(e):
+    """Handle Jinja2 template syntax errors gracefully."""
+    app.logger.error(f"Template syntax error: {str(e)}", exc_info=True)
+    return render_template('error.html', 
+                          error_title="Template Error",
+                          error_message=f"There's a syntax error in a template: {str(e)}"), 500
+
+# Uncomment and update these error handlers
+@app.errorhandler(404)
+def page_not_found(e):
+    """Custom 404 error page."""
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    """Custom 500 error page."""
+    app.logger.error(f"Internal Server Error: {str(e)}", exc_info=True)
+    return render_template('500.html'), 500
+
 @app.route('/export')
 def export_page():
-    return render_template('export.html')
+    accounts = database.get_accounts()
+    return render_template('export.html', accounts=accounts)
 
 @app.route('/export/csv/transactions')
 def export_transactions_csv():

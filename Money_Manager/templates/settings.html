@@ -200,3 +200,31 @@
     </div>
 </div>
 {% endblock %}
+
+{% block scripts %}
+<style>
+    #import-spinner {
+        display: none; /* Hidden by default */
+        margin-left: 10px;
+    }
+</style>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const importForm = document.querySelector('form[action="{{ url_for(\'import_csv\') }}"]');
+        if (importForm) {
+            importForm.addEventListener('submit', function() {
+                const spinner = document.createElement('div');
+                spinner.className = 'spinner-border spinner-border-sm';
+                spinner.id = 'import-spinner';
+                spinner.setAttribute('role', 'status');
+                spinner.innerHTML = '<span class="visually-hidden">Loading...</span>';
+                
+                const importButton = importForm.querySelector('button[type="submit"]');
+                importButton.disabled = true;
+                importButton.appendChild(spinner);
+                spinner.style.display = 'inline-block';
+            });
+        }
+    });
+</script>
+{% endblock %}
