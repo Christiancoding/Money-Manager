@@ -1535,6 +1535,14 @@ def find_available_port(start_port=5000, max_tries=100):
                 continue
     raise RuntimeError(f"No free ports found in range {start_port}-{start_port + max_tries - 1}")
 
+@app.route('/favicon.ico')
+def favicon():
+    """Serve favicon to prevent 404 errors."""
+    return app.send_static_file('favicon.ico'), 200, {
+        'Content-Type': 'image/x-icon',
+        'Cache-Control': 'public, max-age=31536000'
+    }
+
 if __name__ == '__main__':
     try:
         # Configure basic logging before app starts

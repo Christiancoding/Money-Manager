@@ -3,34 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ error_title or "Error" }} - Money Manager</title>
+    <title>{{ error_title|default('Error') }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/fontawesome.min.css') }}">
 </head>
-<body>
+<body class="bg-light">
     <div class="container mt-5">
-        <div class="row">
-            <div class="col-md-8 offset-md-2">
-                <div class="card">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card shadow">
                     <div class="card-header bg-danger text-white">
-                        <h4>{{ error_title or "Error" }}</h4>
+                        <h4>{{ error_title|default('Application Error') }}</h4>
                     </div>
                     <div class="card-body">
-                        <p>{{ error_message }}</p>
-                        
-                        {% if 'unexpected char' in error_message and "\\'" in error_message %}
-                        <div class="alert alert-info">
-                            <h5>Template Fix Recommendation</h5>
-                            <p>This appears to be an issue with escaped quotes in a JavaScript string that contains a Jinja template.</p>
-                            <p>Try changing:</p>
-                            <pre><code>form[action="{{ "{{ url_for(\\'import_csv\\') }}" }}"]</code></pre>
-                            <p>To one of these alternatives:</p>
-                            <pre><code>form[action="{{ "{{ url_for('import_csv') }}" }}"]</code></pre>
-                            <p>Or:</p>
-                            <pre><code>form[action="{{ "{{ url_for(\"import_csv\") }}" }}"]</code></pre>
+                        <div class="alert alert-danger">
+                            <p>{{ error_message|default('An unexpected error occurred.') }}</p>
                         </div>
-                        {% endif %}
-                        
+                        <div class="mt-4">
+                            <a href="{{ url_for('index') }}" class="btn btn-primary">
+                                <i class="fas fa-home me-2"></i> Back to Home
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
                         <a href="{{ url_for('index') }}" class="btn btn-primary">Return to Dashboard</a>
                     </div>
                 </div>
