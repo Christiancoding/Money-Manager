@@ -486,7 +486,8 @@ def import_csv():
         # Get import options
         update_balance = request.form.get('update_balance') == 'on'
         import_mode = request.form.get('import_mode', 'append')  # Default to append mode
-        account_id = request.form.get('account_id', type=int)
+        account_id_str = request.form.get('account_id')
+        account_id = int(account_id_str) if account_id_str else 1  # Default to account 1
 
         # Save file temporarily for processing
         filename = secure_filename(file.filename)

@@ -28,7 +28,7 @@
                             <select class="form-select" name="to_account" id="to_account" required>
                                 <option value="">Select destination account...</option>
                                 {% for account in accounts %}
-                                <option value="{{ account.id }}">
+                                <option value="{{ account.id }}" data-balance="{{ account.current_balance }}">
                                     {{ account.name }} - ${{ "%.2f"|format(account.current_balance) }}
                                 </option>
                                 {% endfor %}
@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (fromOption && toOption && amount > 0 && fromSelect.value !== toSelect.value) {
             const fromBalance = parseFloat(fromOption.dataset.balance);
-            const toBalance = parseFloat(toSelect.dataset.balance);
+            const toBalance = parseFloat(toOption.dataset.balance);
             
             // Update preview
             document.getElementById('from-name').textContent = fromOption.textContent.split(' - ')[0];
